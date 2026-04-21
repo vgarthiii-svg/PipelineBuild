@@ -1,0 +1,29 @@
+# Secrets
+.env
+
+# Runtime database (keep schema in code, not data in git)
+data/*.db
+data/*.db-journal
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+env/
+ENV/
+
+# macOS
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude Code workspace
+.claude/

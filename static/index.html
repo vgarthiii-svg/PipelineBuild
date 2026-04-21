@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BD Pipeline Agent</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script src="/static/app.js"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+    body { background: #f8fafc; color: #1e293b; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    .tier-hot { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+    .tier-warm { background: #fef9c3; color: #854d0e; border: 1px solid #fef08a; }
+    .tier-monitor { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+    .tier-pass { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+    .tier-unscored { background: #f1f5f9; color: #94a3b8; border: 1px solid #e2e8f0; }
+    .dot-filled { color: #f59e0b; }
+    .dot-empty { color: #e2e8f0; }
+    .slide-panel { transition: transform 0.3s ease; }
+    .slide-panel.open { transform: translateX(0); }
+    .slide-panel.closed { transform: translateX(100%); }
+  </style>
+</head>
+<body x-data="app()" x-init="init()">
+
+  <!-- Top Nav -->
+  <nav class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <h1 class="text-lg font-bold text-gray-900">BD Pipeline Agent</h1>
+      <span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">v1.0</span>
+    </div>
+    <div class="flex items-center gap-4">
+      <button @click="view = 'pipeline'" :class="view === 'pipeline' ? 'text-blue-600 font-semibold' : 'text-gray-500'" class="text-sm hover:text-blue-600">Pipeline</button>
+      <button @click="view = 'activity'" :class="view === 'activity' ? 'text-blue-600 font-semibold' : 'text-gray-500'" class="text-sm hover:text-blue-600">Activity</button>
+      <button @click="showImportModal = true" class="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700">+ Import</button>
+    </div>
+  </nav>
+
+  <main class="max-w-[1400px] mx-auto px-6 py-4">
+
+    <!-- Pipeline View -->
+    <div x-show="view === 'pipeline'" x-cloak>
+
+      <!-- Controls Row -->
+      <div class="flex flex-wrap items-center gap-4 mb-4">
+        <!-- Client Selector -->
+        <div>
+          <label class="text-xs text-gray-500 block mb-1">Client</label>
+          <select x-model="selectedClientId" @change="loadPipeline()" class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white">
+            <template x-for="c in clients" :key="c.id">
+              <option :value="c.id" x-text="c.name"></option>
+            </template>
+          </select>
+        </div>
+
+        <!-- Weight Preset -->
+        <div>
+          <label class="text-xs text-gray-500 block mb-1">Weights</label>
+          <select x-model="weightPreset" @change="applyWeights()" class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white">
+            <option value="60/40">Default (60/40 Fit/RS)</option>
+            <option value="80/20">Cold Prospecting (80/20)</option>
+            <option value="50/50">Balanced (50/50)</option>
+            <option value="30/70">Network First (30/70)</option>
+          </select>
+        </div>
+
+        <!-- Tier Filter -->
+        <div>
+          <label class="text-xs text-gray-500 block mb-1">Tier</label>
+          <select x-model="filterTier" @change="loadPipeline()" class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white">
+            <option value="">All Tiers</option>
+            <option value="hot">Hot</option>
+            <option value="warm">Warm</option>
+            <option value="monitor">Monitor</option>
+            <option value="pass">Pass</option>
+            <option value="unscored">Unscored</option>
+          </select>
+        </div>
+
+        <!-- Score All Button -->
+        <div class="ml-auto flex gap-2">
+          <button @click="scoreAll()" class="text-sm bg-green-600 text-white px-4 py-1.5 rounded-lg hover:bg-green-700 flex items-center gap-1" :disabled="scoring" :class="scoring ? 'opacity-50' : ''">
+            <span x-show="!scoring">Score All</span>
+            <span x-show="scoring">Scoring...</span>
+          </button>
+          <a :href="'/api/pipeline/' + selectedClientId + '/export'" class="text-sm border border-gray-300 px-3 py-1.5 rounded-lg hover:bg-gray-50 text-gray-700">Export CSV</a>
+        </div>
+      </div>
+
+      <!-- Summary Cards -->
+      <div class="grid grid-cols-6 gap-3 mb-4">
+        <div class="bg-white rounded-lg border p-3 text-center">
+          <div class="text-2xl font-bold" x-text="summary.total">0</div>
+          <div class="text-xs text-gray-500">Total</div>
+        </div>
+        <div class="bg-white rounded-lg border p-3 text-center border-l-4 border-l-green-500">
+          <div class="text-2xl font-bold text-green-700" x-text="summary.hot">0</div>
+          <div class="text-xs text-gray-500">Hot</div>
+        </div>
+        <div class="bg-white rounded-lg border p-3 text-center border-l-4 border-l-yellow-400">
+          <div class="text-2xl font-bold text-yellow-700" x-text="summary.warm">0</div>
+          <div class="text-xs text-gray-500">Warm</div>
+        </div>
+        <div class="bg-white rounded-lg border p-3 text-center border-l-4 border-l-gray-400">
+          <div class="text-2xl font-bold text-gray-600" x-text="summary.monitor">0</div>
+          <div class="text-xs text-gray-500">Monitor</div>
+        </div>
+        <div class="bg-white rounded-lg border p-3 text-center border-l-4 border-l-red-400">
+          <div class="text-2xl font-bold text-red-700" x-text="summary.pass_count">0</div>
+          <div class="text-xs text-gray-500">Pass</div>
+        </div>
+        <div class="bg-white rounded-lg border p-3 text-center">
+          <div class="text-2xl font-bold text-gray-400" x-text="summary.unscored">0</div>
+          <div class="text-xs text-gray-500">Unscored</div>
+        </div>
+      </div>
+
+      <!-- Quick Add Bar -->
+      <div class="flex items-center gap-2 mb-4">
+        <div class="flex-1 relative">
+          <input type="text" x-model="quickAddName" @keydown.enter="quickAdd()" placeholder="Type a company name and press Enter to add..." class="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+        </div>
+        <button @click="quickAdd()" class="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 whitespace-nowrap" :disabled="!quickAddName.trim()">+ Add</button>
+      </div>
+
+      <!-- Bulk Actions Bar (shows when items selected) -->
+      <div x-show="selectedEntries.length > 0" class="bg-red-50 border border-red-200 rounded-lg px-4 py-2 mb-4 flex items-center justify-between">
+        <span class="text-sm text-red-800">
+          <span class="font-bold" x-text="selectedEntries.length"></span> company(ies) selected
+        </span>
+        <div class="flex gap-2">
+          <button @click="selectedEntries = []" class="text-xs text-gray-600 px-3 py-1 rounded hover:bg-red-100">Clear Selection</button>
+          <button @click="removeSelected()" class="text-xs bg-red-600 text-white px-3 py-1.5 rounded hover:bg-red-700">Remove Selected</button>
+        </div>
+      </div>
+
+      <!-- Pipeline Table -->
+      <div class="bg-white rounded-lg border overflow-hidden">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-50 border-b">
+            <tr>
+              <th class="px-2 py-2 text-center w-8">
+                <input type="checkbox" @change="toggleSelectAll($event)" :checked="selectedEntries.length === pipelineEntries.length && pipelineEntries.length > 0" class="rounded" />
+              </th>
+              <th class="px-2 py-2 text-left text-xs font-medium text-gray-500">#</th>
+              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700" @click="toggleSort('name')">Company</th>
+              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Type</th>
+              <th class="px-3 py-2 text-center text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700" @click="toggleSort('pmf_score')">PMF</th>
+              <th class="px-3 py-2 text-center text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700" @click="toggleSort('relationship_score')">RS</th>
+              <th class="px-3 py-2 text-center text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700" @click="toggleSort('matchmaker_score')">
+                <span class="font-bold">Matchmaker</span>
+              </th>
+              <th class="px-3 py-2 text-center text-xs font-medium text-gray-500">Tier</th>
+              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Best Contact</th>
+              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Status</th>
+              <th class="px-2 py-2 text-center text-xs font-medium text-gray-500 w-8"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="(entry, i) in pipelineEntries" :key="entry.id">
+              <tr class="border-b hover:bg-blue-50" :class="selectedEntries.includes(entry.id) ? 'bg-blue-50' : ''">
+                <td class="px-2 py-2 text-center" @click.stop>
+                  <input type="checkbox" :value="entry.id" x-model.number="selectedEntries" class="rounded" />
+                </td>
+                <td class="px-2 py-2 text-gray-400 cursor-pointer" x-text="i + 1" @click="openDetail(entry)"></td>
+                <td class="px-3 py-2 font-medium text-gray-900 cursor-pointer" x-text="entry.prospect_name" @click="openDetail(entry)"></td>
+                <td class="px-3 py-2 text-gray-500 text-xs cursor-pointer" x-text="entry.prospect_type || ''" @click="openDetail(entry)"></td>
+                <td class="px-3 py-2 text-center cursor-pointer" @click="openDetail(entry)">
+                  <div class="flex items-center justify-center gap-1">
+                    <div class="w-12 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                      <div class="h-full bg-blue-500 rounded-full" :style="'width:' + (entry.pmf_score || 0) + '%'"></div>
+                    </div>
+                    <span class="text-xs text-gray-600" x-text="entry.pmf_score != null ? entry.pmf_score : '-'"></span>
+                  </div>
+                </td>
+                <td class="px-3 py-2 text-center cursor-pointer" @click="openDetail(entry)">
+                  <span class="text-sm tracking-wider" x-html="rsDots(entry.relationship_score)"></span>
+                </td>
+                <td class="px-3 py-2 text-center cursor-pointer" @click="openDetail(entry)">
+                  <span class="font-bold text-base" x-text="entry.matchmaker_score != null ? entry.matchmaker_score : '-'" :class="{'text-green-700': entry.tier === 'hot', 'text-yellow-700': entry.tier === 'warm', 'text-gray-500': entry.tier === 'monitor', 'text-red-600': entry.tier === 'pass'}"></span>
+                </td>
+                <td class="px-3 py-2 text-center cursor-pointer" @click="openDetail(entry)">
+                  <span class="text-xs px-2 py-0.5 rounded-full font-medium" :class="'tier-' + entry.tier" x-text="entry.tier"></span>
+                </td>
+                <td class="px-3 py-2 text-gray-600 text-xs cursor-pointer" x-text="entry.best_contact || '-'" @click="openDetail(entry)"></td>
+                <td class="px-3 py-2 cursor-pointer" @click="openDetail(entry)">
+                  <span class="text-xs px-2 py-0.5 bg-gray-100 rounded text-gray-600" x-text="entry.status"></span>
+                </td>
+                <td class="px-2 py-2 text-center" @click.stop>
+                  <button @click="removeEntry(entry)" class="text-gray-300 hover:text-red-500 text-lg leading-none" title="Remove from pipeline">&times;</button>
+                </td>
+              </tr>
+            </template>
+            <tr x-show="pipelineEntries.length === 0">
+              <td colspan="11" class="px-3 py-8 text-center text-gray-400">No pipeline entries. Use the search bar above or Import to add companies.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Activity View -->
+    <div x-show="view === 'activity'" x-cloak>
+      <h2 class="text-lg font-bold mb-3">Activity Feed</h2>
+      <div class="bg-white rounded-lg border divide-y">
+        <template x-for="a in activityLog" :key="a.id">
+          <div class="px-4 py-3 flex items-start gap-3">
+            <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
+              :class="{
+                'bg-green-100 text-green-700': a.action === 'scored' || a.action === 'tier_changed',
+                'bg-blue-100 text-blue-700': a.action === 'added_to_pipeline',
+                'bg-yellow-100 text-yellow-700': a.action === 'relationship_updated',
+                'bg-purple-100 text-purple-700': a.action === 'intro_generated' || a.action === 'intro_sent',
+                'bg-gray-100 text-gray-500': !['scored','tier_changed','added_to_pipeline','relationship_updated','intro_generated','intro_sent'].includes(a.action),
+              }">
+              <span x-text="a.action ? a.action[0].toUpperCase() : '?'"></span>
+            </div>
+            <div class="flex-1">
+              <div class="text-sm">
+                <span class="font-medium" x-text="a.prospect_name || 'System'"></span>
+                <span class="text-gray-500" x-text="' - ' + (a.action || '').replace(/_/g, ' ')"></span>
+              </div>
+              <div class="text-xs text-gray-400" x-text="a.new_value || a.notes || ''"></div>
+              <div class="text-xs text-gray-300 mt-0.5" x-text="formatDate(a.created_at)"></div>
+            </div>
+          </div>
+        </template>
+        <div x-show="activityLog.length === 0" class="px-4 py-8 text-center text-gray-400">No activity yet.</div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Detail Slide Panel -->
+  <div x-show="detailOpen" x-cloak class="fixed inset-0 z-40" @click.self="detailOpen = false">
+    <div class="absolute inset-0 bg-black/20" @click="detailOpen = false"></div>
+    <div class="slide-panel absolute right-0 top-0 h-full w-[520px] bg-white shadow-xl border-l overflow-y-auto"
+      :class="detailOpen ? 'open' : 'closed'">
+
+      <div class="p-5">
+        <!-- Header -->
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-xl font-bold" x-text="detailEntry?.prospect_name"></h2>
+          <div class="flex items-center gap-2">
+            <button @click="removeEntry(detailEntry); detailOpen = false;" class="text-xs text-red-500 border border-red-300 px-2 py-1 rounded hover:bg-red-50">Remove</button>
+            <button @click="detailOpen = false" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+          </div>
+        </div>
+
+        <!-- Scores -->
+        <div class="grid grid-cols-3 gap-3 mb-5">
+          <div class="bg-gray-50 rounded-lg p-3 text-center">
+            <div class="text-xs text-gray-500">PMF Score</div>
+            <div class="text-2xl font-bold" x-text="detailEntry?.pmf_score ?? '-'"></div>
+          </div>
+          <div class="bg-gray-50 rounded-lg p-3 text-center">
+            <div class="text-xs text-gray-500">RS</div>
+            <div class="text-2xl font-bold" x-text="detailEntry?.relationship_score ?? 0"></div>
+            <div class="text-sm" x-html="rsDots(detailEntry?.relationship_score || 0)"></div>
+          </div>
+          <div class="rounded-lg p-3 text-center" :class="'tier-' + (detailEntry?.tier || 'unscored')">
+            <div class="text-xs opacity-70">Matchmaker</div>
+            <div class="text-2xl font-bold" x-text="detailEntry?.matchmaker_score ?? '-'"></div>
+            <div class="text-xs font-medium uppercase" x-text="detailEntry?.tier"></div>
+          </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="flex gap-1 mb-4 border-b">
+          <button @click="detailTab = 'scoring'" :class="detailTab === 'scoring' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'" class="px-3 py-2 text-xs font-medium">Scoring</button>
+          <button @click="detailTab = 'contacts'" :class="detailTab === 'contacts' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'" class="px-3 py-2 text-xs font-medium">Contacts</button>
+          <button @click="detailTab = 'intro'" :class="detailTab === 'intro' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'" class="px-3 py-2 text-xs font-medium">Intro</button>
+          <button @click="detailTab = 'activity'" :class="detailTab === 'activity' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'" class="px-3 py-2 text-xs font-medium">Activity</button>
+        </div>
+
+        <!-- Scoring Tab -->
+        <div x-show="detailTab === 'scoring'">
+          <h3 class="text-sm font-semibold mb-2">Criterion Scores</h3>
+          <div class="space-y-2 mb-4">
+            <template x-for="cs in detailCriterionScores" :key="cs.criterion_id">
+              <div class="bg-gray-50 rounded p-2">
+                <div class="flex justify-between items-center">
+                  <span class="text-xs font-medium" x-text="cs.criterion_name"></span>
+                  <span class="text-sm font-bold" x-text="cs.score + '/5'"></span>
+                </div>
+                <div class="text-xs text-gray-400 mt-0.5" x-text="cs.reasoning || ''"></div>
+                <div class="text-xs text-gray-300">Weight: <span x-text="cs.criterion_weight"></span></div>
+              </div>
+            </template>
+            <div x-show="detailCriterionScores.length === 0" class="text-xs text-gray-400">No scores yet. Click "Score All" to calculate.</div>
+          </div>
+        </div>
+
+        <!-- Contacts Tab -->
+        <div x-show="detailTab === 'contacts'">
+          <h3 class="text-sm font-semibold mb-2">Known Contacts</h3>
+          <div class="space-y-2">
+            <template x-for="r in detailRelationships" :key="r.id">
+              <div class="bg-gray-50 rounded p-2">
+                <div class="flex justify-between">
+                  <span class="text-sm font-medium" x-text="r.contact_name"></span>
+                  <span class="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800" x-text="'RS: ' + r.score"></span>
+                </div>
+                <div class="text-xs text-gray-500" x-text="r.contact_title || ''"></div>
+                <div class="text-xs text-gray-400 mt-1" x-text="r.context || ''"></div>
+                <div class="text-xs text-gray-300" x-text="'Path: ' + (r.warmest_path || 'Unknown')"></div>
+              </div>
+            </template>
+            <div x-show="detailRelationships.length === 0" class="text-xs text-gray-400">No contacts found.</div>
+          </div>
+        </div>
+
+        <!-- Intro Tab -->
+        <div x-show="detailTab === 'intro'">
+          <div x-show="!detailIntro">
+            <p class="text-xs text-gray-400 mb-3">No intro package generated yet.</p>
+            <button @click="generateIntro()" class="text-sm bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700" :disabled="generatingIntro">
+              <span x-show="!generatingIntro">Generate Intro Package</span>
+              <span x-show="generatingIntro">Generating...</span>
+            </button>
+          </div>
+          <div x-show="detailIntro">
+            <div class="mb-3">
+              <div class="text-xs text-gray-500 mb-1">Subject</div>
+              <div class="text-sm font-medium bg-gray-50 rounded p-2" x-text="detailIntro?.email_subject"></div>
+            </div>
+            <div class="mb-3">
+              <div class="text-xs text-gray-500 mb-1">Email</div>
+              <pre class="text-sm bg-gray-50 rounded p-3 whitespace-pre-wrap font-sans leading-relaxed" x-text="detailIntro?.email_body"></pre>
+            </div>
+            <div class="flex gap-2">
+              <button @click="markIntroSent()" class="text-xs bg-green-600 text-white px-3 py-1.5 rounded hover:bg-green-700">Mark Sent</button>
+              <button @click="generateIntro()" class="text-xs border px-3 py-1.5 rounded hover:bg-gray-50">Regenerate</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Activity Tab -->
+        <div x-show="detailTab === 'activity'">
+          <div class="space-y-2">
+            <template x-for="a in detailActivity" :key="a.id">
+              <div class="border-l-2 border-gray-200 pl-3 py-1">
+                <div class="text-xs text-gray-500" x-text="(a.action || '').replace(/_/g, ' ')"></div>
+                <div class="text-xs text-gray-700" x-text="a.new_value || a.notes || ''"></div>
+                <div class="text-xs text-gray-300" x-text="formatDate(a.created_at)"></div>
+              </div>
+            </template>
+            <div x-show="detailActivity.length === 0" class="text-xs text-gray-400">No activity.</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Import Modal -->
+  <div x-show="showImportModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center" @click.self="showImportModal = false">
+    <div class="absolute inset-0 bg-black/30" @click="showImportModal = false"></div>
+    <div class="relative bg-white rounded-xl shadow-xl w-[500px] p-6">
+      <h2 class="text-lg font-bold mb-3">Import Companies</h2>
+
+      <div class="mb-4">
+        <label class="text-sm font-medium text-gray-700 block mb-1">Paste company names (one per line)</label>
+        <textarea x-model="importText" rows="6" class="w-full border rounded-lg p-3 text-sm" placeholder="Sentry&#10;Erie&#10;Cincinnati&#10;..."></textarea>
+      </div>
+
+      <div class="flex gap-2 justify-end">
+        <button @click="showImportModal = false" class="text-sm border px-4 py-2 rounded-lg hover:bg-gray-50">Cancel</button>
+        <button @click="importCompanies()" class="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700" :disabled="importing">
+          <span x-show="!importing">Import & Add to Pipeline</span>
+          <span x-show="importing">Importing...</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
