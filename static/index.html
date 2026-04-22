@@ -1,0 +1,1564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BD Pipeline Agent</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script src="/static/app.js?v=2026042122"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+    body { background: #f8fafc; color: #1e293b; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    .tier-hot { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+    .tier-warm { background: #fef9c3; color: #854d0e; border: 1px solid #fef08a; }
+    .tier-monitor { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+    .tier-pass { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+    .tier-unscored { background: #f1f5f9; color: #94a3b8; border: 1px solid #e2e8f0; }
+    .tier-filtered { background: #f1f5f9; color: #cbd5e1; border: 1px solid #e2e8f0; text-decoration: line-through; }
+    .dot-filled { color: #f59e0b; }
+    .dot-empty { color: #e2e8f0; }
+    .slide-panel { transition: transform 0.3s ease; }
+    .slide-panel.open { transform: translateX(0); }
+    .slide-panel.closed { transform: translateX(100%); }
+    input[type="range"] { accent-color: #3b82f6; }
+    /* Compact density: tighter rows, smaller type */
+    .table-compact th, .table-compact td { padding-top: 0.25rem !important; padding-bottom: 0.25rem !important; }
+    .table-compact td { font-size: 12px; }
+    .table-compact .font-bold { font-weight: 600; }
+    .layer-card { background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; }
+    .layer-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; margin-bottom: 8px; }
+  </style>
+</head>
+<body x-data="app()" x-init="init()">
+
+  <!-- Top Nav -->
+  <nav class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <h1 class="text-lg font-bold text-gray-900">BD Pipeline Agent</h1>
+      <span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">v2.0</span>
+    </div>
+    <div class="flex items-center gap-4">
+      <button @click="view = 'pipeline'" :class="view === 'pipeline' ? 'text-blue-600 font-semibold' : 'text-gray-500'" class="text-sm hover:text-blue-600">Pipeline</button>
+      <button @click="view = 'activity'; loadActivity()" :class="view === 'activity' ? 'text-blue-600 font-semibold' : 'text-gray-500'" class="text-sm hover:text-blue-600">Activity</button>
+      <button @click="view = 'agents'; loadAgents()" :class="view === 'agents' ? 'text-blue-600 font-semibold' : 'text-gray-500'" class="text-sm hover:text-blue-600">Agents</button>
+      <button @click="showImportModal = true" class="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700">+ Import</button>
+    </div>
+  </nav>
+
+  <!-- Alert Bar -->
+  <div x-show="unreadCount > 0 || pendingActions > 0" class="bg-amber-50 border-b border-amber-200 px-6 py-2">
+    <div class="max-w-[1400px] mx-auto flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <span class="text-amber-700 text-sm font-medium" x-show="pendingActions > 0">
+          <span class="inline-flex items-center justify-center w-5 h-5 bg-red-500 text-white text-xs rounded-full mr-1" x-text="pendingActions"></span>
+          Action(s) need your approval
+        </span>
+        <span class="text-amber-600 text-sm" x-show="unreadCount > 0 && pendingActions === 0">
+          <span class="inline-flex items-center justify-center w-5 h-5 bg-amber-500 text-white text-xs rounded-full mr-1" x-text="unreadCount"></span>
+          New notification(s)
+        </span>
+      </div>
+      <div class="flex items-center gap-2">
+        <button @click="showNotificationsPanel = !showNotificationsPanel" class="text-xs text-amber-700 border border-amber-300 px-3 py-1 rounded hover:bg-amber-100">View</button>
+        <button @click="markAllRead()" class="text-xs text-amber-500 hover:text-amber-700">Dismiss all</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notifications + Approvals Panel -->
+  <div x-show="showNotificationsPanel" x-cloak class="bg-white border-b shadow-sm">
+    <div class="max-w-[1400px] mx-auto px-6 py-3">
+      <!-- Pending Actions (Cost Gate) -->
+      <template x-for="action in pendingActionsList" :key="action.id">
+        <div class="bg-red-50 border border-red-200 rounded-lg p-3 mb-2 flex items-center justify-between">
+          <div>
+            <div class="text-sm font-medium text-red-800" x-text="action.description"></div>
+            <div class="text-xs text-red-500 mt-0.5">
+              Estimated cost: <span class="font-bold" x-text="action.estimated_cost"></span>
+              <span class="text-red-400 ml-2">This will call the Anthropic API and incur charges.</span>
+            </div>
+          </div>
+          <div class="flex gap-2 ml-4">
+            <button @click="rejectAction(action.id)" class="text-xs border border-gray-300 px-3 py-1.5 rounded hover:bg-gray-50">Skip</button>
+            <button @click="approveAction(action.id)" class="text-xs bg-green-600 text-white px-3 py-1.5 rounded hover:bg-green-700">Approve & Run</button>
+          </div>
+        </div>
+      </template>
+      <!-- Recent Notifications -->
+      <template x-for="n in recentNotifications" :key="n.id">
+        <div class="flex items-start gap-2 py-1.5 text-sm" :class="n.read ? 'opacity-50' : ''">
+          <div class="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" :class="n.type === 'api_cost_pending' ? 'bg-red-400' : n.type === 'tier_change' ? 'bg-green-400' : 'bg-blue-400'"></div>
+          <div>
+            <span class="font-medium" x-text="n.title"></span>
+            <span class="text-gray-400 ml-1 text-xs" x-text="formatDate(n.created_at)"></span>
+          </div>
+        </div>
+      </template>
+      <div x-show="recentNotifications.length === 0 && pendingActionsList.length === 0" class="text-xs text-gray-400 py-2">No notifications.</div>
+    </div>
+  </div>
+
+  <main class="max-w-[1400px] mx-auto px-6 py-4">
+    <div x-show="view === 'pipeline'" x-cloak>
+
+      <!-- THREE CONTROL LAYERS -->
+      <div class="grid grid-cols-3 gap-4 mb-5">
+
+        <!-- LAYER 1: CLIENT -->
+        <div class="layer-card relative" @mouseenter="showLayerInfo('layer1', $event)" @mouseleave="hideLayerInfo()">
+          <div class="layer-label flex items-center gap-1">Layer 1: Client <span class="text-gray-300 text-[10px] hover:text-blue-500">ⓘ</span></div>
+          <div class="flex gap-2 mb-2 relative" @click.outside="clientDropdownOpen = false">
+            <!-- Custom dropdown button -->
+            <button @click="clientDropdownOpen = !clientDropdownOpen" class="flex-1 border rounded-lg px-3 py-2 text-sm text-left flex items-center justify-between min-w-0 transition-all"
+              :class="loadingClientName ? 'border-blue-400 bg-blue-50' : 'border-gray-300 bg-white'"
+              :disabled="!!loadingClientName">
+              <span class="truncate flex items-center gap-2">
+                <!-- Spinner when loading -->
+                <svg x-show="loadingClientName" class="w-3.5 h-3.5 flex-shrink-0 animate-spin text-blue-600" fill="none" viewBox="0 0 24 24">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" class="opacity-25"></circle>
+                  <path fill="currentColor" class="opacity-75" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <!-- Text: loading state OR active client -->
+                <span x-show="loadingClientName" x-text="(loadingClientType === 'prospect' ? 'Promoting ' : 'Loading ') + loadingClientName + '...'" class="text-blue-700 font-medium"></span>
+                <span x-show="!loadingClientName" x-text="activeClient ? ((activeClient.active ? '✓ ' : '') + activeClient.name + ' (' + (clientCriteriaCounts[activeClient.id] || 0) + ' criteria)') : 'Select a client'"></span>
+              </span>
+              <span class="text-gray-400 ml-1 flex-shrink-0" x-show="!loadingClientName">▼</span>
+            </button>
+
+            <!-- Dropdown panel: every company in the system as a potential lens -->
+            <div x-show="clientDropdownOpen" style="display: none;" class="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-40 max-h-96 overflow-y-auto">
+              <div class="px-3 py-2 bg-blue-50 border-b text-[11px] text-blue-700">
+                Select any company to view their pipeline. New companies join the pool via the <b>+ Add</b> input below.
+              </div>
+              <template x-for="opt in lensOptions.filter(o => o.active)" :key="'a-' + (opt.client_id || 'p' + opt.prospect_id)">
+                <button @click="selectLens(opt)" class="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 flex items-center gap-2" :class="activeClient && activeClient.id === opt.client_id ? 'bg-blue-50 font-medium' : ''">
+                  <span class="text-green-600 flex-shrink-0">✓</span>
+                  <span class="truncate flex-1" x-text="opt.name"></span>
+                  <span class="text-[10px] text-green-700 bg-green-100 rounded px-1.5 py-0.5 flex-shrink-0">active</span>
+                </button>
+              </template>
+              <template x-for="opt in lensOptions.filter(o => !o.active && o.has_client_record)" :key="'c-' + opt.client_id">
+                <button @click="selectLens(opt)" class="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 flex items-center gap-2" :class="activeClient && activeClient.id === opt.client_id ? 'bg-blue-50 font-medium' : ''">
+                  <span class="truncate flex-1" x-text="opt.name"></span>
+                  <span class="text-[10px] text-gray-500 bg-gray-100 rounded px-1.5 py-0.5 flex-shrink-0">inactive</span>
+                </button>
+              </template>
+              <template x-for="opt in lensOptions.filter(o => !o.has_client_record)" :key="'p-' + opt.prospect_id">
+                <button @click="selectLens(opt)" class="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 flex items-center gap-2">
+                  <span class="truncate flex-1" x-text="opt.name"></span>
+                  <span x-show="opt.type" class="text-[10px] text-gray-400 flex-shrink-0 truncate max-w-[120px]" x-text="opt.type"></span>
+                </button>
+              </template>
+              <div x-show="lensOptions.length === 0" class="px-3 py-6 text-center text-xs text-gray-400">
+                No companies yet. Add one with the <b>+ Add</b> input below.
+              </div>
+            </div>
+          </div>
+          <div x-show="activeClient" class="text-xs text-gray-500 space-y-0.5">
+            <div class="flex items-center gap-2 mb-1">
+              <span x-show="activeClient?.active" class="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium">ACTIVE CLIENT</span>
+              <span x-show="!activeClient?.active" class="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-medium">INACTIVE</span>
+              <button @click="toggleClientActive()" class="text-xs text-blue-600 hover:underline" x-text="activeClient?.active ? 'Mark Inactive' : 'Make Active'"></button>
+              <button @click="deleteClient()" class="text-xs text-red-600 hover:underline" title="Remove as client. Company stays as prospect in other pipelines.">Delete Client</button>
+              <button @click="deleteCompanyEverywhere()" class="text-xs text-red-700 hover:underline font-semibold" title="Nuclear: wipe this company from every pipeline, prospect record, and client record.">Delete Everywhere</button>
+              <button @click="_computeLastRefreshInfo(); showRefreshMenu = true;" class="text-xs text-gray-500 hover:text-blue-600 ml-auto flex items-center gap-1" title="Refresh client data">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                Refresh
+              </button>
+            </div>
+            <div x-text="activeClient?.description || 'No description'" class="line-clamp-2"></div>
+            <div class="text-gray-400">Buyer: <span x-text="activeClient?.target_buyer || '-'"></span></div>
+          </div>
+          <div x-show="promotingFromDropdown" class="mt-2 bg-blue-50 border border-blue-200 rounded-lg p-2 flex items-start gap-2">
+            <svg class="w-4 h-4 flex-shrink-0 animate-spin text-blue-600 mt-0.5" fill="none" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" class="opacity-25"></circle>
+              <path fill="currentColor" class="opacity-75" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <div class="text-xs text-blue-700 flex-1" x-text="promotingStatus"></div>
+          </div>
+        </div>
+
+        <!-- LAYER 2: SOURCES -->
+        <div class="layer-card relative" @mouseenter="showLayerInfo('layer2', $event)" @mouseleave="hideLayerInfo()">
+          <div class="layer-label flex items-center gap-1">Layer 2: Data Sources <span class="text-gray-300 text-[10px] hover:text-blue-500">ⓘ</span></div>
+          <div class="space-y-1.5">
+            <template x-for="src in sources" :key="src.key">
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" x-model="src.enabled" class="rounded text-blue-600" />
+                <span class="text-sm" x-text="src.label"></span>
+                <span class="text-xs ml-auto" :class="src.configured ? 'text-green-500' : 'text-gray-300'" x-text="src.configured ? 'Active' : 'Stub'"></span>
+              </label>
+            </template>
+          </div>
+        </div>
+
+        <!-- LAYER 3: SCORING WEIGHTS -->
+        <div class="layer-card relative" @mouseenter="showLayerInfo('layer3', $event)" @mouseleave="hideLayerInfo()">
+          <div class="layer-label flex items-center gap-1">Layer 3: Scoring Weights <span class="text-gray-300 text-[10px] hover:text-blue-500">ⓘ</span></div>
+          <div class="flex items-center gap-2 mb-3">
+            <select x-model="weightPreset" @change="applyWeightPreset()" class="flex-1 border border-gray-300 rounded-lg px-2 py-1.5 text-xs bg-white">
+              <option value="60/40">Default (60/40 Fit/RS)</option>
+              <option value="80/20">Cold Prospecting (80/20)</option>
+              <option value="50/50">Balanced (50/50)</option>
+              <option value="30/70">Network First (30/70)</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+          <div class="flex items-center gap-2 text-xs mb-1">
+            <span class="w-8 text-gray-500">PMF</span>
+            <input type="range" min="0" max="100" :value="pmfWeightPct" @input="onCustomWeight($event, 'pmf')" class="flex-1 h-1" />
+            <span class="w-8 text-right font-mono text-gray-700" x-text="pmfWeightPct + '%'"></span>
+          </div>
+          <div class="flex items-center gap-2 text-xs">
+            <span class="w-8 text-gray-500">RS</span>
+            <input type="range" min="0" max="100" :value="rsWeightPct" @input="onCustomWeight($event, 'rs')" class="flex-1 h-1" />
+            <span class="w-8 text-right font-mono text-gray-700" x-text="rsWeightPct + '%'"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- CRITERIA LIBRARY (grouped toggle tiles) -->
+      <div class="layer-card mb-4">
+        <div class="flex items-center justify-between cursor-pointer" @click="criteriaOpen = !criteriaOpen">
+          <div class="layer-label mb-0">Scoring Criteria <span class="text-gray-400 font-normal lowercase" x-text="'(' + activeCriteriaCount + ' of ' + totalLibraryCount + ' active)'"></span></div>
+          <div class="flex items-center gap-2">
+            <label x-show="criteriaOpen" @click.stop class="flex items-center gap-1 text-[11px] text-gray-500 cursor-pointer select-none" title="Show numeric weight sliders for fine-tuning">
+              <input type="checkbox" x-model="advancedWeights" class="rounded scale-75" />
+              <span>Advanced</span>
+            </label>
+            <span x-show="criteriaOpen" class="text-[11px] text-gray-400 italic">auto-rescores on change</span>
+            <span class="text-gray-400 text-xs" x-text="criteriaOpen ? '&#9650; Collapse' : '&#9660; Expand'"></span>
+          </div>
+        </div>
+        <div x-show="criteriaOpen" x-cloak class="mt-3">
+          <!-- Preset selector -->
+          <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-xs font-semibold text-blue-900">Quick start:</span>
+              <select x-model="selectedPreset" @change="applyPreset()" class="flex-1 text-xs border border-blue-300 rounded px-2 py-1 bg-white">
+                <option value="">— Choose a preset —</option>
+                <template x-for="p in scoringPresets" :key="p.key">
+                  <option :value="p.key" x-text="p.label + ' (' + p.criterion_count + ' criteria)'"></option>
+                </template>
+                <option value="custom">Custom (clear all)</option>
+              </select>
+            </div>
+            <div class="text-[11px] text-blue-800" x-text="presetDescription || 'Pick a preset to auto-configure criteria for your scenario, or toggle criteria manually below.'"></div>
+          </div>
+          <!-- Group tiles -->
+          <div class="space-y-3">
+            <template x-for="group in libraryGroups" :key="group.group_name">
+              <div class="border rounded-lg overflow-hidden">
+                <!-- Group header -->
+                <div class="bg-gray-50 px-4 py-2 flex items-center justify-between cursor-pointer" @click="group._open = !group._open"
+                  @mouseenter="showTip(
+                    group.group_name === 'Market Fit' ? 'group_market' :
+                    group.group_name === 'Product & Technology' ? 'group_product' :
+                    group.group_name === 'Business Dynamics' ? 'group_business' :
+                    group.group_name === 'Relationship & Timing' ? 'group_relationship' : null,
+                    $event)"
+                  @mouseleave="hideTip()">
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-semibold" x-text="group.group_name"></span>
+                    <span class="text-xs text-gray-400" x-text="countActiveInGroup(group.group_name) + ' of ' + group.criteria.length + ' active'"></span>
+                    <span class="text-gray-300 text-[10px]">ⓘ</span>
+                  </div>
+                  <span class="text-gray-400 text-xs" x-text="group._open ? '&#9650;' : '&#9660;'"></span>
+                </div>
+                <!-- Group criteria -->
+                <div x-show="group._open" class="p-3 grid grid-cols-2 lg:grid-cols-3 gap-2">
+                  <template x-for="lib in group.criteria" :key="lib.library_id">
+                    <div class="rounded-lg p-2.5 border cursor-pointer transition-all relative group"
+                      :class="isCriterionActive(lib.library_id) ? 'bg-blue-50 border-blue-300' : 'bg-white border-gray-200 opacity-60'"
+                      @click="toggleLibraryCriterion(lib.library_id)"
+                      @mouseenter="showCriterionInfo(lib, group.group_name, $event)"
+                      @mouseleave="hideCriterionInfo()">
+                      <div class="flex items-center gap-2 mb-1">
+                        <div class="w-4 h-4 rounded border flex items-center justify-center text-xs"
+                          :class="isCriterionActive(lib.library_id) ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-300'">
+                          <span x-show="isCriterionActive(lib.library_id)">&#10003;</span>
+                        </div>
+                        <span class="text-xs font-medium" x-text="lib.name"></span>
+                        <span class="ml-auto text-[10px] text-gray-300 group-hover:text-blue-500" title="Hover for details">ⓘ</span>
+                      </div>
+                      <div class="text-[10px] text-gray-400 line-clamp-1 ml-6" x-text="lib.description"></div>
+                      <!-- Impact label (always shown when active) -->
+                      <div x-show="isCriterionActive(lib.library_id) && !advancedWeights" class="mt-1.5 ml-6 flex items-center gap-1">
+                        <span class="text-[10px] text-blue-600" x-text="weightImpactLabel(getCriterionWeight(lib.library_id))"></span>
+                      </div>
+                      <!-- Weight slider (only when Advanced toggle is on) -->
+                      <div x-show="isCriterionActive(lib.library_id) && advancedWeights" class="mt-2 ml-6 flex items-center gap-1" @click.stop>
+                        <span class="text-[10px] text-gray-400">Wt:</span>
+                        <input type="range" min="1" max="10" :value="getCriterionWeight(lib.library_id)" @change="updateLibraryCriterionWeight(lib.library_id, $event.target.value)" class="flex-1 h-1" />
+                        <span class="text-[10px] font-bold w-3 text-right" x-text="getCriterionWeight(lib.library_id)"></span>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+
+      <!-- IDENTITY FILTERS (collapsible) -->
+      <div class="layer-card mb-4">
+        <div class="flex items-center justify-between cursor-pointer" @click="filtersOpen = !filtersOpen">
+          <div class="layer-label mb-0">Identity Filters <span class="text-gray-400 font-normal lowercase" x-text="hasFilters ? '(active)' : '(none)'"></span></div>
+          <span class="text-gray-400 text-xs" x-text="filtersOpen ? '&#9650; Collapse' : '&#9660; Expand'"></span>
+        </div>
+        <div x-show="filtersOpen" x-cloak class="mt-3">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">Allowed Business Models</label>
+              <div class="flex flex-wrap gap-1">
+                <template x-for="bm in ['B2B','B2C','hybrid','marketplace','SaaS','embedded']">
+                  <label class="flex items-center gap-1 text-xs bg-gray-50 px-2 py-1 rounded cursor-pointer">
+                    <input type="checkbox" :value="bm" x-model="filterConfig.allowed_business_models" @change="scheduleFilterPreview()" class="rounded text-blue-600" />
+                    <span x-text="bm"></span>
+                  </label>
+                </template>
+              </div>
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">Allowed Stages</label>
+              <div class="flex flex-wrap gap-1">
+                <template x-for="st in ['startup','growth','mature','enterprise']">
+                  <label class="flex items-center gap-1 text-xs bg-gray-50 px-2 py-1 rounded cursor-pointer">
+                    <input type="checkbox" :value="st" x-model="filterConfig.allowed_stages" @change="scheduleFilterPreview()" class="rounded text-blue-600" />
+                    <span x-text="st"></span>
+                  </label>
+                </template>
+              </div>
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">Min Employees</label>
+              <input type="number" x-model.number="filterConfig.min_employees" @input="scheduleFilterPreview()" class="border rounded px-2 py-1 text-sm w-full" placeholder="e.g. 10" />
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">Max Employees</label>
+              <input type="number" x-model.number="filterConfig.max_employees" @input="scheduleFilterPreview()" class="border rounded px-2 py-1 text-sm w-full" placeholder="e.g. 50000" />
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">Excluded Verticals (comma-separated)</label>
+              <input type="text" x-model="filterConfig.excluded_verticals_text" @input="scheduleFilterPreview()" class="border rounded px-2 py-1 text-sm w-full" placeholder="Life Insurance, Health Insurance" />
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">Notes</label>
+              <input type="text" x-model="filterConfig.notes" class="border rounded px-2 py-1 text-sm w-full" placeholder="Filter notes..." />
+            </div>
+          </div>
+          <!-- Live preview: would block X of Y -->
+          <div x-show="filterPreview" class="mt-3 bg-white border rounded-lg p-3">
+            <div class="flex items-center justify-between mb-2">
+              <div class="text-xs font-semibold text-gray-700">Preview <span class="text-gray-400 font-normal">before saving</span></div>
+              <div class="text-xs" x-show="filterPreviewLoading">Calculating...</div>
+            </div>
+            <template x-if="filterPreview && !filterPreviewLoading">
+              <div>
+                <div class="flex items-baseline gap-3 mb-2">
+                  <span class="text-2xl font-bold" :class="filterPreview.blocked === 0 ? 'text-green-600' : filterPreview.blocked > filterPreview.passed ? 'text-red-600' : 'text-amber-600'" x-text="filterPreview.blocked"></span>
+                  <span class="text-xs text-gray-500">
+                    of <b x-text="filterPreview.total"></b> companies would be blocked
+                    <span x-show="filterPreview.total > 0">(<b x-text="filterPreview.passed"></b> would pass)</span>
+                  </span>
+                </div>
+                <!-- Reason breakdown -->
+                <div x-show="Object.keys(filterPreview.blocked_by_reason || {}).length > 0" class="mb-2 space-y-0.5">
+                  <div class="text-[10px] uppercase tracking-wide text-gray-400 font-semibold mb-1">Reasons</div>
+                  <template x-for="[reason, count] in Object.entries(filterPreview.blocked_by_reason || {})" :key="reason">
+                    <div class="flex items-start gap-2 text-[11px]">
+                      <span class="font-mono font-bold text-amber-700 w-6 flex-shrink-0 text-right tabular-nums" x-text="count"></span>
+                      <span class="text-gray-600" x-text="reason"></span>
+                    </div>
+                  </template>
+                </div>
+                <!-- Top 8 specific companies that would be blocked -->
+                <div x-show="filterPreview.blocked_detail.length > 0">
+                  <div class="text-[10px] uppercase tracking-wide text-gray-400 font-semibold mb-1">
+                    Would block
+                    <span x-show="filterPreview.blocked_detail.length > 8" x-text="'(showing first 8 of ' + filterPreview.blocked_detail.length + ')'" class="normal-case text-gray-400"></span>
+                  </div>
+                  <div class="flex flex-wrap gap-1">
+                    <template x-for="b in filterPreview.blocked_detail.slice(0, 8)" :key="b.prospect_id">
+                      <span class="text-[11px] bg-red-50 text-red-700 px-2 py-0.5 rounded" :title="b.reason" x-text="b.name + (b.matchmaker_score ? ' (' + b.matchmaker_score + ')' : '')"></span>
+                    </template>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <div class="flex gap-2 mt-3">
+            <button @click="previewFilters()" class="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700" :disabled="filterPreviewLoading">
+              <span x-show="!filterPreviewLoading">Preview impact</span><span x-show="filterPreviewLoading">Calculating...</span>
+            </button>
+            <button @click="saveFilters()" class="text-xs bg-gray-600 text-white px-3 py-1.5 rounded-lg hover:bg-gray-700">Save filters</button>
+            <button @click="saveFiltersAndRescore()" class="text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700">Save & rescore</button>
+            <button @click="clearFilters()" x-show="hasFilters" class="text-xs border border-gray-300 text-gray-600 px-3 py-1.5 rounded-lg hover:bg-gray-50">Clear filters</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- QUICK ADD + SEARCH + ACTIONS -->
+      <div class="flex items-center gap-3 mb-4">
+        <div class="flex-1 relative">
+          <input type="text" x-model="quickAddName" @keydown.enter="quickAdd()" placeholder="Type a company name and press Enter to add to pipeline..." class="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+        <div class="relative w-56">
+          <input type="text" x-model="pipelineSearch" placeholder="Search pipeline..." class="w-full border border-gray-300 rounded-lg pl-8 pr-7 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <svg class="absolute left-2.5 top-2.5 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          <button x-show="pipelineSearch" @click="pipelineSearch = ''" class="absolute right-2 top-2 text-gray-400 hover:text-gray-600 text-sm leading-none">&times;</button>
+        </div>
+        <button @click="quickAdd()" class="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 whitespace-nowrap" :disabled="!quickAddName.trim()">+ Add</button>
+        <button @click="enrichAll()" class="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700" :disabled="enriching" title="Generate business profiles for all companies (free)">
+          <span x-show="!enriching">Enrich All</span><span x-show="enriching">Enriching...</span>
+        </button>
+        <button @click="bulkInferBehavior()" class="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700" :disabled="inferringBehavior" title="Auto-populate behavior profiles from company type (free)">
+          <span x-show="!inferringBehavior">Infer Behavior</span><span x-show="inferringBehavior">Inferring...</span>
+        </button>
+        <button @click="scoreAll()" class="text-sm bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700" :disabled="scoring"><span x-show="!scoring">Score All</span><span x-show="scoring">Scoring...</span></button>
+        <a :href="'/api/pipeline/' + selectedClientId + '/export'" class="text-sm border border-gray-300 px-3 py-2 rounded-lg hover:bg-gray-50 text-gray-700">Export</a>
+      </div>
+
+      <!-- Summary Cards (click to filter) -->
+      <div class="grid grid-cols-7 gap-3 mb-4">
+        <button @click="filterTier = ''; loadPipeline()" class="bg-white rounded-lg border p-3 text-center transition-all hover:shadow-md" :class="!filterTier ? 'ring-2 ring-blue-500 border-blue-500' : ''">
+          <div class="text-2xl font-bold" x-text="summary.total">0</div>
+          <div class="text-xs text-gray-500">Total</div>
+        </button>
+        <button @click="filterTier = 'hot'; loadPipeline()" @mouseenter="showTip('tier_hot', $event)" @mouseleave="hideTip()" class="bg-white rounded-lg border p-3 text-center border-l-4 border-l-green-500 transition-all hover:shadow-md" :class="filterTier === 'hot' ? 'ring-2 ring-green-500 border-green-500' : ''">
+          <div class="text-2xl font-bold text-green-700" x-text="summary.hot">0</div>
+          <div class="text-xs text-gray-500">Hot</div>
+        </button>
+        <button @click="filterTier = 'warm'; loadPipeline()" @mouseenter="showTip('tier_warm', $event)" @mouseleave="hideTip()" class="bg-white rounded-lg border p-3 text-center border-l-4 border-l-yellow-400 transition-all hover:shadow-md" :class="filterTier === 'warm' ? 'ring-2 ring-yellow-500 border-yellow-500' : ''">
+          <div class="text-2xl font-bold text-yellow-700" x-text="summary.warm">0</div>
+          <div class="text-xs text-gray-500">Warm</div>
+        </button>
+        <button @click="filterTier = 'monitor'; loadPipeline()" @mouseenter="showTip('tier_monitor', $event)" @mouseleave="hideTip()" class="bg-white rounded-lg border p-3 text-center border-l-4 border-l-gray-400 transition-all hover:shadow-md" :class="filterTier === 'monitor' ? 'ring-2 ring-gray-500 border-gray-500' : ''">
+          <div class="text-2xl font-bold text-gray-600" x-text="summary.monitor">0</div>
+          <div class="text-xs text-gray-500">Monitor</div>
+        </button>
+        <button @click="filterTier = 'pass'; loadPipeline()" @mouseenter="showTip('tier_pass', $event)" @mouseleave="hideTip()" class="bg-white rounded-lg border p-3 text-center border-l-4 border-l-red-400 transition-all hover:shadow-md" :class="filterTier === 'pass' ? 'ring-2 ring-red-500 border-red-500' : ''">
+          <div class="text-2xl font-bold text-red-700" x-text="summary.pass_count">0</div>
+          <div class="text-xs text-gray-500">Pass</div>
+        </button>
+        <button @click="filterTier = 'unscored'; loadPipeline()" class="bg-white rounded-lg border p-3 text-center transition-all hover:shadow-md" :class="filterTier === 'unscored' ? 'ring-2 ring-gray-400 border-gray-400' : ''">
+          <div class="text-2xl font-bold text-gray-400" x-text="summary.unscored">0</div>
+          <div class="text-xs text-gray-500">Unscored</div>
+        </button>
+        <button @click="filterTier = 'filtered'; loadPipeline()" @mouseenter="showTip('tier_filtered', $event)" @mouseleave="hideTip()" class="bg-white rounded-lg border p-3 text-center border-l-4 border-l-gray-300 transition-all hover:shadow-md" :class="filterTier === 'filtered' ? 'ring-2 ring-gray-400 border-gray-400' : ''">
+          <div class="text-2xl font-bold text-gray-400" x-text="summary.filtered || 0">0</div>
+          <div class="text-xs text-gray-500">Filtered</div>
+        </button>
+      </div>
+
+      <!-- Bulk Actions -->
+      <div x-show="selectedEntries.length > 0" class="bg-red-50 border border-red-200 rounded-lg px-4 py-2 mb-4 flex items-center justify-between">
+        <span class="text-sm text-red-800"><span class="font-bold" x-text="selectedEntries.length"></span> selected</span>
+        <div class="flex gap-2"><button @click="selectedEntries = []" class="text-xs text-gray-600 px-3 py-1 rounded hover:bg-red-100">Clear</button><button @click="removeSelected()" class="text-xs bg-red-600 text-white px-3 py-1.5 rounded hover:bg-red-700">Remove Selected</button></div>
+      </div>
+
+      <!-- Active filter indicator -->
+      <div x-show="filterTier || pipelineSearch" class="flex items-center gap-2 mb-3 text-xs">
+        <span class="text-gray-400">Active filters:</span>
+        <span x-show="filterTier" class="inline-flex items-center gap-1 bg-blue-50 text-blue-700 px-2 py-0.5 rounded">
+          <span>Tier: <b x-text="filterTier"></b></span>
+          <button @click="filterTier = ''; loadPipeline()" class="hover:text-blue-900">&times;</button>
+        </span>
+        <span x-show="pipelineSearch" class="inline-flex items-center gap-1 bg-blue-50 text-blue-700 px-2 py-0.5 rounded">
+          <span>Search: <b x-text="pipelineSearch"></b></span>
+          <button @click="pipelineSearch = ''" class="hover:text-blue-900">&times;</button>
+        </span>
+        <button @click="filterTier = ''; pipelineSearch = ''; loadPipeline()" class="text-gray-500 hover:text-gray-700 underline">Clear all</button>
+      </div>
+
+      <!-- Table display controls (above the table, right-aligned) -->
+      <div class="flex items-center justify-between mb-2">
+        <div class="text-xs text-gray-400">
+          <span x-show="filteredPipelineEntries().length > 0" x-text="filteredPipelineEntries().length + ' companies'"></span>
+          <span class="mx-1 text-gray-300">·</span>
+          <span class="text-gray-400">Press <kbd class="bg-gray-100 border border-gray-200 rounded px-1 text-[10px] font-mono">/</kbd> to search, <kbd class="bg-gray-100 border border-gray-200 rounded px-1 text-[10px] font-mono">j</kbd>/<kbd class="bg-gray-100 border border-gray-200 rounded px-1 text-[10px] font-mono">k</kbd> to navigate</span>
+        </div>
+        <div class="flex items-center gap-2 text-xs">
+          <!-- Density toggle -->
+          <div class="inline-flex rounded border border-gray-200 overflow-hidden">
+            <button @click="setDensity('comfortable')" :class="tableDensity === 'comfortable' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'" class="px-2 py-1 text-[11px]" title="Comfortable row height">Comfortable</button>
+            <button @click="setDensity('compact')" :class="tableDensity === 'compact' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'" class="px-2 py-1 text-[11px] border-l" title="Compact row height — see more rows at once">Compact</button>
+          </div>
+
+          <!-- Column visibility menu -->
+          <div class="relative" @click.outside="showColumnMenu = false">
+            <button @click="showColumnMenu = !showColumnMenu" class="px-2 py-1 border border-gray-200 rounded bg-white hover:bg-gray-50 text-gray-600 flex items-center gap-1" title="Show / hide columns">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+              <span>Columns</span>
+            </button>
+            <div x-show="showColumnMenu" x-cloak class="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-xl z-30 py-1">
+              <div class="px-3 py-1.5 text-[10px] uppercase tracking-wide text-gray-400 font-semibold border-b">Show columns</div>
+              <template x-for="col in [
+                {k:'type', label:'Type'},
+                {k:'pmf', label:'PMF'},
+                {k:'rs', label:'RS'},
+                {k:'matchmaker', label:'Matchmaker'},
+                {k:'fric', label:'Fric'},
+                {k:'intent', label:'Intent'},
+                {k:'tier', label:'Tier'},
+                {k:'best_contact', label:'Best Contact'},
+                {k:'status', label:'Status'},
+              ]" :key="col.k">
+                <label class="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-gray-50 cursor-pointer">
+                  <input type="checkbox" :checked="columnVisibility[col.k]" @change="toggleColumn(col.k)" class="rounded" />
+                  <span x-text="col.label" class="flex-1"></span>
+                </label>
+              </template>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pipeline Table -->
+      <div class="bg-white rounded-lg border overflow-hidden">
+        <table class="w-full text-sm" :class="tableDensity === 'compact' ? 'table-compact' : ''">
+          <thead class="bg-gray-50 border-b sticky top-0 z-10">
+            <tr>
+              <th class="px-2 py-2 text-center w-8"><input type="checkbox" @change="toggleSelectAll($event)" :checked="selectedEntries.length === filteredPipelineEntries().length && filteredPipelineEntries().length > 0" class="rounded" /></th>
+              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700" @click="toggleSort('name')" @mouseenter="showTip('col_company', $event)" @mouseleave="hideTip()">
+                <span>Company</span><span class="ml-1 text-blue-600" x-show="sortBy === 'name'" x-text="sortDir === 'desc' ? '↓' : '↑'"></span>
+              </th>
+              <th x-show="columnVisibility.type" class="px-3 py-2 text-left text-xs font-medium text-gray-500" @mouseenter="showTip('col_type', $event)" @mouseleave="hideTip()">Type</th>
+              <th x-show="columnVisibility.pmf" class="px-3 py-2 text-center text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700" @click="toggleSort('pmf_score')" @mouseenter="showTip('col_pmf', $event)" @mouseleave="hideTip()">
+                <span>PMF</span><span class="ml-1 text-blue-600" x-show="sortBy === 'pmf_score'" x-text="sortDir === 'desc' ? '↓' : '↑'"></span>
+              </th>
+              <th x-show="columnVisibility.rs" class="px-3 py-2 text-center text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700" @click="toggleSort('relationship_score')" @mouseenter="showTip('col_rs', $event)" @mouseleave="hideTip()">
+                <span>RS</span><span class="ml-1 text-blue-600" x-show="sortBy === 'relationship_score'" x-text="sortDir === 'desc' ? '↓' : '↑'"></span>
+              </th>
+              <th x-show="columnVisibility.matchmaker" class="px-3 py-2 text-center text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700" @click="toggleSort('matchmaker_score')" @mouseenter="showTip('col_matchmaker', $event)" @mouseleave="hideTip()">
+                <span class="font-bold">Matchmaker</span><span class="ml-1 text-blue-600" x-show="sortBy === 'matchmaker_score'" x-text="sortDir === 'desc' ? '↓' : '↑'"></span>
+              </th>
+              <th x-show="columnVisibility.fric" class="px-2 py-2 text-center text-xs font-medium text-gray-400" @mouseenter="showTip('col_fric', $event)" @mouseleave="hideTip()">Fric</th>
+              <th x-show="columnVisibility.intent" class="px-2 py-2 text-center text-xs font-medium text-gray-400" @mouseenter="showTip('col_intent', $event)" @mouseleave="hideTip()">Int</th>
+              <th x-show="columnVisibility.tier" class="px-3 py-2 text-center text-xs font-medium text-gray-500" @mouseenter="showTip('col_tier', $event)" @mouseleave="hideTip()">Tier</th>
+              <th x-show="columnVisibility.best_contact" class="px-3 py-2 text-left text-xs font-medium text-gray-500">Best Contact</th>
+              <th x-show="columnVisibility.status" class="px-3 py-2 text-left text-xs font-medium text-gray-500">Status</th>
+              <th class="px-2 py-2 w-8"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="(entry, i) in filteredPipelineEntries()" :key="entry.id">
+              <tr class="border-b hover:bg-blue-50"
+                :class="{
+                  'bg-blue-50': selectedEntries.includes(entry.id),
+                  'bg-blue-100 ring-1 ring-blue-400 ring-inset': detailOpen && detailEntry && detailEntry.id === entry.id,
+                }">
+                <td class="px-2 py-2 text-center" @click.stop><input type="checkbox" :value="entry.id" x-model.number="selectedEntries" class="rounded" /></td>
+                <td class="px-3 py-2 font-medium text-gray-900 cursor-pointer" x-text="entry.prospect_name" @click="openDetail(entry)"></td>
+                <td x-show="columnVisibility.type" class="px-3 py-2 text-gray-500 text-xs cursor-pointer" x-text="entry.prospect_type || ''" @click="openDetail(entry)"></td>
+                <td x-show="columnVisibility.pmf" class="px-3 py-2 text-center cursor-pointer" @click="openDetail(entry)"><div class="flex items-center justify-center gap-1"><div class="w-12 h-1.5 bg-gray-200 rounded-full overflow-hidden"><div class="h-full bg-blue-500 rounded-full" :style="'width:' + (entry.pmf_score || 0) + '%'"></div></div><span class="text-xs text-gray-600" x-text="entry.pmf_score != null ? entry.pmf_score : '-'"></span></div></td>
+                <td x-show="columnVisibility.rs" class="px-3 py-2 text-center cursor-pointer" @click="openDetail(entry)"><span class="text-sm tracking-wider" x-html="rsDots(entry.relationship_score)"></span></td>
+                <td x-show="columnVisibility.matchmaker" class="px-3 py-2 text-center cursor-pointer relative" @click="openDetail(entry)" @mouseenter="showBreakdown(entry, $event)" @mouseleave="hideBreakdown()">
+                  <div class="inline-flex items-center gap-1">
+                    <span class="font-bold text-base" x-text="entry.matchmaker_score != null ? entry.matchmaker_score : '-'" :class="{'text-green-700': entry.tier === 'hot', 'text-amber-700': entry.tier === 'warm', 'text-gray-500': entry.tier === 'monitor', 'text-red-600': entry.tier === 'pass'}"></span>
+                    <span x-show="entry._delta != null && entry._delta !== 0" class="text-[10px] font-semibold tabular-nums"
+                      :class="entry._delta > 0 ? 'text-green-600' : 'text-red-500'"
+                      x-text="(entry._delta > 0 ? '▲' : '▼') + Math.abs(entry._delta)"
+                      title="Change since previous load"></span>
+                  </div>
+                </td>
+                <td x-show="columnVisibility.fric" class="px-2 py-2 text-center cursor-pointer text-xs text-gray-400" @click="openDetail(entry)" x-text="entry.friction_coefficient != 1.0 ? entry.friction_coefficient : '-'"></td>
+                <td x-show="columnVisibility.intent" class="px-2 py-2 text-center cursor-pointer text-xs" @click="openDetail(entry)" :class="entry.intent_multiplier > 1.0 ? 'text-green-600' : entry.intent_multiplier < 1.0 ? 'text-red-400' : 'text-gray-400'" x-text="entry.intent_multiplier != 1.0 ? entry.intent_multiplier + 'x' : '-'"></td>
+                <td x-show="columnVisibility.tier" class="px-3 py-2 text-center cursor-pointer" @click="openDetail(entry)" @mouseenter="showTip('tier_' + (entry.tier || 'filtered'), $event)" @mouseleave="hideTip()"><span class="text-xs px-2 py-0.5 rounded-full font-medium" :class="'tier-' + entry.tier" x-text="entry.tier"></span></td>
+                <td x-show="columnVisibility.best_contact" class="px-3 py-2 text-gray-600 text-xs cursor-pointer" x-text="entry.best_contact || '-'" @click="openDetail(entry)"></td>
+                <td x-show="columnVisibility.status" class="px-3 py-2 cursor-pointer" @click="openDetail(entry)"><span class="text-xs px-2 py-0.5 rounded"
+                  :class="{
+                    'bg-blue-50 text-blue-700': entry.status === 'new',
+                    'bg-gray-100 text-gray-600': entry.status === 'scored' || entry.status === 'unscored',
+                    'bg-green-50 text-green-700': entry.status === 'intro_sent' || entry.status === 'engaged',
+                    'bg-amber-50 text-amber-700': entry.status === 'queued' || entry.status === 'pending',
+                    'bg-red-50 text-red-700': entry.status === 'rejected' || entry.status === 'lost',
+                  }" x-text="entry.status || 'new'"></span></td>
+                <td class="px-2 py-2 text-center" @click.stop><button @click="removeEntry(entry)" class="text-gray-300 hover:text-red-500 text-lg leading-none" title="Remove from this pipeline only (stays in other clients' pipelines)">&times;</button></td>
+              </tr>
+            </template>
+            <!-- Smart empty states -->
+            <tr x-show="!selectedClientId">
+              <td colspan="12" class="px-3 py-12 text-center">
+                <div class="text-gray-500 text-sm mb-1">Pick a lens to view a pipeline</div>
+                <div class="text-xs text-gray-400">Use the Layer 1 dropdown above to select any company. Their pipeline will appear here.</div>
+              </td>
+            </tr>
+            <tr x-show="selectedClientId && pipelineEntries.length === 0">
+              <td colspan="12" class="px-3 py-12 text-center">
+                <div class="text-gray-500 text-sm mb-1">No companies in this pipeline yet</div>
+                <div class="text-xs text-gray-400">Type a company name above and press Enter to add one, or use Import for a list.</div>
+              </td>
+            </tr>
+            <tr x-show="selectedClientId && pipelineEntries.length > 0 && filteredPipelineEntries().length === 0">
+              <td colspan="12" class="px-3 py-12 text-center">
+                <div class="text-gray-500 text-sm mb-1">No companies match your current filters</div>
+                <div class="text-xs text-gray-400 mb-2">
+                  <span x-show="filterTier">Tier filter: <b x-text="filterTier"></b></span>
+                  <span x-show="filterTier && pipelineSearch"> · </span>
+                  <span x-show="pipelineSearch">Search: <b x-text="pipelineSearch"></b></span>
+                </div>
+                <button @click="filterTier = ''; pipelineSearch = ''; loadPipeline()" class="text-xs bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700">Clear filters</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Activity View -->
+    <div x-show="view === 'activity'" x-cloak>
+      <h2 class="text-lg font-bold mb-3">Activity Feed</h2>
+      <div class="bg-white rounded-lg border divide-y">
+        <template x-for="a in activityLog" :key="a.id">
+          <div class="px-4 py-3 flex items-start gap-3">
+            <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold" :class="{'bg-green-100 text-green-700': a.action === 'scored' || a.action === 'tier_changed', 'bg-blue-100 text-blue-700': a.action === 'added_to_pipeline', 'bg-yellow-100 text-yellow-700': a.action === 'relationship_updated', 'bg-purple-100 text-purple-700': a.action === 'intro_generated' || a.action === 'intro_sent', 'bg-red-100 text-red-500': a.action?.includes('removed'), 'bg-gray-100 text-gray-500': !['scored','tier_changed','added_to_pipeline','relationship_updated','intro_generated','intro_sent'].includes(a.action) && !a.action?.includes('removed')}">
+              <span x-text="a.action ? a.action[0].toUpperCase() : '?'"></span>
+            </div>
+            <div class="flex-1">
+              <div class="text-sm"><span class="font-medium" x-text="a.prospect_name || 'System'"></span> <span class="text-gray-500" x-text="' - ' + (a.action || '').replace(/_/g, ' ')"></span></div>
+              <div class="text-xs text-gray-400" x-text="a.new_value || a.notes || ''"></div>
+              <div class="text-xs text-gray-300 mt-0.5" x-text="formatDate(a.created_at)"></div>
+            </div>
+          </div>
+        </template>
+        <div x-show="activityLog.length === 0" class="px-4 py-8 text-center text-gray-400">No activity yet.</div>
+      </div>
+    </div>
+
+    <!-- Agents View -->
+    <div x-show="view === 'agents'" x-cloak>
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h2 class="text-lg font-bold">Scheduled Agents</h2>
+          <p class="text-xs text-gray-500 mt-1">Background jobs that keep the pipeline fresh without you driving them.</p>
+        </div>
+        <button @click="loadAgents()" class="text-xs border border-gray-300 px-3 py-1.5 rounded hover:bg-gray-50">Refresh</button>
+      </div>
+
+      <!-- Ad-hoc HubSpot import -->
+      <div class="bg-white rounded-lg border p-4 mb-4">
+        <h3 class="text-sm font-semibold mb-1">Ad-hoc HubSpot import</h3>
+        <p class="text-xs text-gray-500 mb-3">Pull companies from HubSpot matching a search term. Auto-dedupes against your existing pipeline, skips fuzzy duplicates (e.g. "Erie" vs "Erie Insurance"), imports new ones into every active client pipeline, rescores. Use for ad-hoc batches without waiting for the nightly list sync.</p>
+        <div class="flex items-center gap-2">
+          <input type="text" x-model="hsQuery" @keydown.enter="runHubspotImport()" placeholder='e.g. "insurance", "agency", "carrier"' class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <button @click="runHubspotImport()" class="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 whitespace-nowrap" :disabled="hsImportRunning || !hsQuery.trim()">
+            <span x-show="!hsImportRunning">Import</span>
+            <span x-show="hsImportRunning">Importing...</span>
+          </button>
+        </div>
+        <!-- Result summary after import -->
+        <div x-show="hsImportResult" class="mt-3 bg-gray-50 rounded p-3 text-xs">
+          <div class="font-semibold text-gray-800 mb-2">
+            Imported <span x-text="hsImportResult?.imported"></span> new companies
+            <span x-show="hsImportResult?.skipped > 0">
+              (skipped <span x-text="hsImportResult?.skipped"></span> existing or fuzzy duplicates)
+            </span>
+          </div>
+          <div x-show="hsImportResult?.imported_detail?.length > 0" class="flex flex-wrap gap-1 mb-2">
+            <template x-for="c in hsImportResult?.imported_detail || []" :key="c.name">
+              <span class="text-[11px] bg-green-50 text-green-700 px-2 py-0.5 rounded" x-text="c.name + ' · ' + c.type"></span>
+            </template>
+          </div>
+          <div x-show="hsImportResult?.skipped_names?.length > 0" class="text-gray-500 text-[11px]">
+            Skipped: <span x-text="(hsImportResult?.skipped_names || []).join(', ')"></span>
+          </div>
+          <div class="text-gray-500 text-[11px] mt-1">
+            Rescored: <span x-text="Object.entries(hsImportResult?.scored || {}).map(([k,v]) => k + ' (' + v + ')').join(' · ')"></span>
+          </div>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 gap-3">
+        <template x-for="job in agents" :key="job.job_key">
+          <div class="bg-white rounded-lg border p-4">
+            <div class="flex items-start justify-between gap-4">
+              <div class="flex-1">
+                <div class="flex items-center gap-2 mb-1">
+                  <h3 class="text-sm font-semibold" x-text="job.name"></h3>
+                  <span class="text-[10px] px-2 py-0.5 rounded font-medium uppercase"
+                    :class="{
+                      'bg-green-100 text-green-700': job.enabled && job.last_status === 'ok',
+                      'bg-red-100 text-red-700': job.last_status === 'error',
+                      'bg-blue-100 text-blue-700': job.enabled && job.last_status === 'running',
+                      'bg-gray-100 text-gray-500': !job.enabled || !job.last_status,
+                    }"
+                    x-text="!job.enabled ? 'paused' : (job.last_status || 'scheduled')"></span>
+                </div>
+                <div class="text-xs text-gray-600 mb-3" x-text="job.description"></div>
+                <div class="grid grid-cols-3 gap-3 text-xs">
+                  <div>
+                    <div class="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">Schedule</div>
+                    <div class="font-mono text-gray-700" x-text="job.schedule"></div>
+                  </div>
+                  <div>
+                    <div class="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">Last run</div>
+                    <div class="text-gray-700" x-text="job.last_run ? formatDate(job.last_run) : 'Never'"></div>
+                  </div>
+                  <div>
+                    <div class="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">Next run</div>
+                    <div class="text-gray-700" x-text="job.next_run ? formatDate(job.next_run) : '-'"></div>
+                  </div>
+                </div>
+                <!-- Last output (expandable) -->
+                <div x-show="job.last_output" class="mt-3">
+                  <button @click="job._expanded = !job._expanded" class="text-[11px] text-blue-600 hover:underline">
+                    <span x-show="!job._expanded">Show last result ▾</span>
+                    <span x-show="job._expanded">Hide last result ▴</span>
+                  </button>
+                  <pre x-show="job._expanded" class="mt-2 bg-gray-50 rounded p-2 text-[10px] text-gray-700 font-mono overflow-x-auto whitespace-pre-wrap" x-text="JSON.stringify(job.last_output, null, 2)"></pre>
+                </div>
+              </div>
+              <!-- Actions -->
+              <div class="flex flex-col gap-2 flex-shrink-0">
+                <button @click="runAgentNow(job.job_key)" class="text-xs bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700 whitespace-nowrap" :disabled="agentRunning === job.job_key">
+                  <span x-show="agentRunning !== job.job_key">Run now</span>
+                  <span x-show="agentRunning === job.job_key">Running...</span>
+                </button>
+                <button @click="toggleAgent(job.job_key)" class="text-xs border px-3 py-1.5 rounded whitespace-nowrap"
+                  :class="job.enabled ? 'border-amber-300 text-amber-700 hover:bg-amber-50' : 'border-green-300 text-green-700 hover:bg-green-50'"
+                  x-text="job.enabled ? 'Pause' : 'Enable'"></button>
+              </div>
+            </div>
+          </div>
+        </template>
+        <div x-show="agents.length === 0" class="bg-white rounded-lg border p-8 text-center text-gray-400 text-sm">
+          No agents registered. Define jobs in <code class="bg-gray-100 px-1 rounded text-xs">app/services/scheduler.py</code>.
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Detail Slide Panel -->
+  <div x-show="detailOpen" x-cloak class="fixed inset-0 z-40">
+    <div class="absolute inset-0 bg-black/20" @click="detailOpen = false"></div>
+    <div class="slide-panel absolute right-0 top-0 h-full w-[520px] bg-white shadow-xl border-l overflow-y-auto" :class="detailOpen ? 'open' : 'closed'">
+      <div class="p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-xl font-bold" x-text="detailEntry?.prospect_name"></h2>
+          <div class="flex items-center gap-2">
+            <button x-show="!isProspectAlreadyClient()" @click="promoteToClient()" class="text-xs bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700" :disabled="promotingClient">
+              <span x-show="!promotingClient">Make Client</span><span x-show="promotingClient">Creating...</span>
+            </button>
+            <!-- Overflow menu for destructive actions -->
+            <div class="relative" @click.outside="detailMenuOpen = false">
+              <button @click="detailMenuOpen = !detailMenuOpen" class="text-gray-500 hover:text-gray-700 hover:bg-gray-100 w-8 h-8 rounded flex items-center justify-center" title="More actions">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 16 16"><path d="M3 9.5a1.5 1.5 0 110-3 1.5 1.5 0 010 3zm5 0a1.5 1.5 0 110-3 1.5 1.5 0 010 3zm5 0a1.5 1.5 0 110-3 1.5 1.5 0 010 3z"/></svg>
+              </button>
+              <div x-show="detailMenuOpen" x-cloak class="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-10 w-64 py-1">
+                <button @click="removeEntry(detailEntry); detailOpen = false; detailMenuOpen = false;" class="w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-600 flex items-start gap-2">
+                  <span class="flex-shrink-0">−</span>
+                  <div>
+                    <div class="font-medium">Remove from this pipeline</div>
+                    <div class="text-[10px] text-gray-400">Company stays in other clients' pipelines.</div>
+                  </div>
+                </button>
+                <button @click="deleteProspectEverywhere(detailEntry); detailMenuOpen = false;" class="w-full text-left px-3 py-2 text-xs hover:bg-red-100 text-red-700 flex items-start gap-2 border-t">
+                  <span class="flex-shrink-0">✕</span>
+                  <div>
+                    <div class="font-semibold">Delete company everywhere</div>
+                    <div class="text-[10px] text-gray-400">Wipe from all pipelines, profiles, and client records.</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+            <button @click="detailOpen = false" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+          </div>
+        </div>
+        <div class="grid grid-cols-3 gap-3 mb-5">
+          <div class="bg-gray-50 rounded-lg p-3 text-center"><div class="text-xs text-gray-500">PMF</div><div class="text-2xl font-bold" x-text="detailEntry?.pmf_score ?? '-'"></div></div>
+          <div class="bg-gray-50 rounded-lg p-3 text-center"><div class="text-xs text-gray-500">RS</div><div class="text-2xl font-bold" x-text="detailEntry?.relationship_score ?? 0"></div><div class="text-sm" x-html="rsDots(detailEntry?.relationship_score || 0)"></div></div>
+          <div class="rounded-lg p-3 text-center" :class="'tier-' + (detailEntry?.tier || 'unscored')"><div class="text-xs opacity-70">Matchmaker</div><div class="text-2xl font-bold" x-text="detailEntry?.matchmaker_score ?? '-'"></div><div class="text-xs font-medium uppercase" x-text="detailEntry?.tier"></div></div>
+        </div>
+        <div x-show="detailEntry?.pmf_score" class="text-[11px] text-gray-500 -mt-3 mb-4 px-1 text-center" x-text="plainFormula()"></div>
+        <div class="flex gap-1 mb-4 border-b">
+          <button @click="detailTab = 'profile'; loadBusinessProfile()" :class="detailTab === 'profile' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'" class="px-3 py-2 text-xs font-medium">Profile</button>
+          <button @click="detailTab = 'scoring'" :class="detailTab === 'scoring' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'" class="px-3 py-2 text-xs font-medium">Scoring</button>
+          <button @click="detailTab = 'contacts'" :class="detailTab === 'contacts' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'" class="px-3 py-2 text-xs font-medium">Contacts</button>
+          <button @click="detailTab = 'intent'; loadIntentSignals()" :class="detailTab === 'intent' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'" class="px-3 py-2 text-xs font-medium">Intent</button>
+          <button @click="detailTab = 'intro'" :class="detailTab === 'intro' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'" class="px-3 py-2 text-xs font-medium">Intro</button>
+          <button @click="detailTab = 'behavior'" :class="detailTab === 'behavior' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'" class="px-3 py-2 text-xs font-medium">Behavior</button>
+          <button @click="detailTab = 'activity'" :class="detailTab === 'activity' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'" class="px-3 py-2 text-xs font-medium">Activity</button>
+        </div>
+        <!-- Scoring Tab -->
+        <div x-show="detailTab === 'scoring'">
+          <!-- Filtered-out banner -->
+          <div x-show="detailBreakdown && detailBreakdown.filtered" class="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-xs font-bold text-red-700 uppercase">Filtered out</span>
+            </div>
+            <div class="text-xs text-red-700" x-text="detailBreakdown?.filter_reason"></div>
+            <div class="text-[10px] text-red-600 mt-1 italic">This company was blocked by an identity filter before scoring. Edit the filter on Layer 1 to include them.</div>
+          </div>
+
+          <!-- Score breakdown card (same visual language as the hover popup) -->
+          <div x-show="detailBreakdown && !detailBreakdown.filtered" class="border border-gray-200 rounded-lg bg-white overflow-hidden mb-4">
+            <div class="px-3 py-2 border-b flex items-center justify-between"
+              :class="{'bg-green-50': detailBreakdown?.tier === 'hot', 'bg-yellow-50': detailBreakdown?.tier === 'warm', 'bg-gray-50': detailBreakdown?.tier === 'monitor', 'bg-red-50': detailBreakdown?.tier === 'pass'}">
+              <div class="text-[10px] uppercase tracking-wide text-gray-500 font-semibold">Score breakdown</div>
+              <div class="text-[10px] uppercase tracking-wide text-gray-500">
+                <span x-text="detailBreakdown?.tier"></span> · Matchmaker <span class="font-bold" x-text="detailBreakdown?.matchmaker_score ?? '-'"></span>
+              </div>
+            </div>
+            <div class="p-3 space-y-3 text-xs">
+              <!-- PMF -->
+              <div>
+                <div class="flex items-center justify-between mb-1">
+                  <span class="font-semibold text-gray-700">PMF · <span x-text="detailBreakdown?.pmf.score ?? '0'"></span><span class="text-gray-400">/100</span></span>
+                  <span class="text-gray-400">× <span x-text="Math.round((detailBreakdown?.pmf.weight||0.6) * 100)"></span>% = <span class="font-bold text-gray-900" x-text="detailBreakdown?.pmf.contribution ?? 0"></span></span>
+                </div>
+                <div class="space-y-0.5 ml-1">
+                  <template x-for="c in detailBreakdown?.pmf.criteria || []" :key="c.name">
+                    <div class="flex items-start gap-2">
+                      <span class="inline-block w-4 text-center flex-shrink-0" :class="c.score >= 4 ? 'text-green-600' : (c.score >= 2 ? 'text-yellow-600' : 'text-red-500')" x-text="c.score >= 4 ? '✓' : (c.score >= 2 ? '◐' : '✗')"></span>
+                      <span class="flex-1 text-gray-700" x-text="c.name"></span>
+                      <span class="text-gray-400 tabular-nums" x-text="c.score + '/5 × w' + c.weight"></span>
+                    </div>
+                  </template>
+                  <div x-show="(detailBreakdown?.pmf.criteria || []).length === 0" class="text-gray-400 italic">No criteria active</div>
+                </div>
+              </div>
+              <!-- RS -->
+              <div class="flex items-center justify-between pt-2 border-t">
+                <span class="font-semibold text-gray-700">RS · <span x-text="detailBreakdown?.rs.score ?? '0'"></span><span class="text-gray-400">/5</span></span>
+                <span class="text-gray-400">× <span x-text="Math.round((detailBreakdown?.rs.weight||0.4) * 100)"></span>% = <span class="font-bold text-gray-900" x-text="detailBreakdown?.rs.contribution ?? 0"></span></span>
+              </div>
+              <!-- Multipliers -->
+              <div class="pt-2 border-t space-y-1">
+                <div class="flex items-center justify-between">
+                  <span class="text-gray-500">Friction</span>
+                  <span :class="(detailBreakdown?.friction ?? 1) >= 1 ? 'text-green-600' : ((detailBreakdown?.friction ?? 1) >= 0.8 ? 'text-yellow-600' : 'text-red-500')" x-text="'× ' + (detailBreakdown?.friction ?? 1)"></span>
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-gray-500">Intent</span>
+                  <span :class="(detailBreakdown?.intent ?? 1) > 1 ? 'text-green-600' : 'text-gray-500'" x-text="'× ' + (detailBreakdown?.intent ?? 1)"></span>
+                </div>
+              </div>
+              <!-- Formula -->
+              <div class="pt-2 border-t font-mono text-[10px] text-gray-500 leading-snug" x-text="detailBreakdown?.formula"></div>
+            </div>
+          </div>
+
+          <!-- Manual score overrides -->
+          <div class="mb-4">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-sm font-semibold">Adjust criterion scores</h3>
+              <span class="text-[10px] text-gray-400 font-normal">click a number to override · rescores automatically</span>
+            </div>
+            <div class="space-y-2">
+              <template x-for="cs in detailCriterionScores" :key="cs.criterion_id">
+                <div class="bg-gray-50 rounded p-2">
+                  <div class="flex justify-between items-center mb-1">
+                    <span class="text-xs font-medium" x-text="cs.criterion_name"></span>
+                    <div class="flex items-center gap-1">
+                      <template x-for="n in [0,1,2,3,4,5]">
+                        <button
+                          @click="overrideScore(cs, n)"
+                          :class="cs.score === n ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-500 hover:bg-gray-300'"
+                          class="text-xs w-5 h-5 rounded flex items-center justify-center font-bold"
+                          x-text="n"></button>
+                      </template>
+                    </div>
+                  </div>
+                  <div class="text-xs text-gray-400" x-text="cs.reasoning || ''"></div>
+                  <div class="text-xs text-gray-300">Weight: <span x-text="cs.criterion_weight"></span></div>
+                </div>
+              </template>
+              <div x-show="detailCriterionScores.length === 0" class="text-xs text-gray-400 p-2">No scores yet. Click "Score All" on the pipeline toolbar.</div>
+            </div>
+          </div>
+        </div>
+        <!-- Contacts Tab -->
+        <div x-show="detailTab === 'contacts'"><h3 class="text-sm font-semibold mb-2">Known Contacts</h3><div class="space-y-2"><template x-for="r in detailRelationships" :key="r.id"><div class="bg-gray-50 rounded p-2"><div class="flex justify-between"><span class="text-sm font-medium" x-text="r.contact_name"></span><span class="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800" x-text="'RS: ' + r.score"></span></div><div class="text-xs text-gray-500" x-text="r.contact_title || ''"></div><div class="text-xs text-gray-400 mt-1" x-text="r.context || ''"></div><div class="text-xs text-gray-300" x-text="'Path: ' + (r.warmest_path || 'Unknown')"></div></div></template><div x-show="detailRelationships.length === 0" class="text-xs text-gray-400">No contacts found.</div></div></div>
+        <!-- Intro Tab -->
+        <div x-show="detailTab === 'intro'">
+          <!-- Pending approval banner -->
+          <div x-show="introPendingActionId" class="mb-4 bg-yellow-50 border border-yellow-300 rounded-lg p-3">
+            <div class="flex items-start gap-2">
+              <svg class="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5 animate-pulse" fill="currentColor" viewBox="0 0 20 20"><path d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l6.518 11.591c.75 1.334-.213 2.98-1.742 2.98H3.48c-1.53 0-2.493-1.646-1.743-2.98L8.257 3.099zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"/></svg>
+              <div class="flex-1">
+                <div class="text-sm font-semibold text-yellow-900">Approval needed</div>
+                <div class="text-xs text-yellow-800 mt-0.5">Claude will generate the intro email (cost: $0.02–$0.05). Click <b>"Approve & Run"</b> in the notifications bar at the top of the page, or cancel below.</div>
+                <div class="flex gap-2 mt-2">
+                  <button @click="showNotificationsPanel = true" class="text-xs bg-yellow-600 text-white px-3 py-1 rounded hover:bg-yellow-700">Open notifications</button>
+                  <button @click="cancelPendingIntro()" class="text-xs bg-white border border-yellow-400 text-yellow-800 px-3 py-1 rounded hover:bg-yellow-100">Cancel request</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Pre-generation: contact picker + generate button -->
+          <div x-show="!detailIntro && !introPendingActionId">
+            <h3 class="text-sm font-semibold mb-2">Generate an intro</h3>
+            <div class="mb-3">
+              <label class="text-xs text-gray-500 uppercase tracking-wide mb-1 block">Target contact</label>
+              <select x-model="introContactName" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+                <option value="">Let Claude pick from known contacts</option>
+                <template x-for="r in detailRelationships" :key="r.id">
+                  <option :value="r.contact_name" x-text="r.contact_name + (r.contact_title ? ' · ' + r.contact_title : '') + ' (RS: ' + r.score + ')'"></option>
+                </template>
+              </select>
+              <div x-show="detailRelationships.length === 0" class="text-[11px] text-gray-400 mt-1">No known contacts. Claude will draft to a likely role-holder based on the company profile.</div>
+            </div>
+            <button @click="generateIntro()" class="text-sm bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700" :disabled="generatingIntro">
+              <span x-show="!generatingIntro">Generate intro package</span><span x-show="generatingIntro">Generating...</span>
+            </button>
+            <p class="text-[11px] text-gray-400 mt-2">Uses Claude ($0.02–$0.05). Output follows your voice rules — no em dashes, no buzzwords, direct and conversational.</p>
+          </div>
+
+          <!-- Post-generation: editable fields + actions -->
+          <div x-show="detailIntro">
+            <div class="flex items-center justify-between mb-3">
+              <div class="flex items-center gap-2">
+                <h3 class="text-sm font-semibold">Intro package</h3>
+                <span class="text-[10px] px-2 py-0.5 rounded uppercase font-semibold"
+                  :class="{'bg-gray-100 text-gray-600': detailIntro?.status === 'draft', 'bg-yellow-100 text-yellow-700': detailIntro?.status === 'approved', 'bg-green-100 text-green-700': detailIntro?.status === 'sent'}"
+                  x-text="detailIntro?.status"></span>
+              </div>
+              <span x-show="introDirty" class="text-[10px] text-amber-600 italic">unsaved changes</span>
+              <span x-show="introSaving" class="text-[10px] text-blue-600 italic">saving...</span>
+            </div>
+
+            <!-- Target contact (if present) -->
+            <div x-show="detailIntro?.target_contact" class="mb-3 text-xs bg-blue-50 rounded p-2 flex items-center gap-2">
+              <span class="text-gray-500">To:</span>
+              <span class="font-medium text-blue-900" x-text="detailIntro?.target_contact"></span>
+              <span x-show="detailIntro?.target_title" class="text-gray-500" x-text="'· ' + detailIntro?.target_title"></span>
+            </div>
+
+            <!-- Subject (editable) -->
+            <div class="mb-3">
+              <div class="flex items-center justify-between mb-1">
+                <label class="text-xs text-gray-500 uppercase tracking-wide">Subject</label>
+                <button @click="copyToClipboard(detailIntro.email_subject, 'Subject')" class="text-[10px] text-blue-600 hover:underline">Copy</button>
+              </div>
+              <input type="text" x-model="detailIntro.email_subject" @input="introDirty = true" @blur="saveIntroEdits()" class="w-full text-sm border border-gray-300 rounded px-2 py-1.5" />
+            </div>
+
+            <!-- Body (editable) -->
+            <div class="mb-3">
+              <div class="flex items-center justify-between mb-1">
+                <label class="text-xs text-gray-500 uppercase tracking-wide">Email body</label>
+                <button @click="copyToClipboard(detailIntro.email_body, 'Email body')" class="text-[10px] text-blue-600 hover:underline">Copy</button>
+              </div>
+              <textarea x-model="detailIntro.email_body" @input="introDirty = true" @blur="saveIntroEdits()" rows="12" class="w-full text-sm border border-gray-300 rounded p-3 font-sans leading-relaxed"></textarea>
+            </div>
+
+            <!-- Voice rules checker -->
+            <div x-show="voiceWarnings().length > 0" class="mb-3 bg-yellow-50 border border-yellow-200 rounded p-2">
+              <div class="text-[10px] uppercase tracking-wide text-yellow-700 font-bold mb-1">Voice check</div>
+              <ul class="text-xs text-yellow-800 space-y-0.5">
+                <template x-for="w in voiceWarnings()" :key="w">
+                  <li class="flex items-start gap-1.5"><span>⚠</span><span x-text="w"></span></li>
+                </template>
+              </ul>
+            </div>
+
+            <!-- Talking points (if present) -->
+            <div x-show="detailIntro?.talking_points" class="mb-3">
+              <label class="text-xs text-gray-500 uppercase tracking-wide mb-1 block">Talking points</label>
+              <div class="text-xs bg-gray-50 rounded p-2 whitespace-pre-wrap" x-text="detailIntro?.talking_points"></div>
+            </div>
+
+            <!-- Objections (if present) -->
+            <div x-show="detailIntroObjections.length > 0" class="mb-3">
+              <label class="text-xs text-gray-500 uppercase tracking-wide mb-1 block">Likely objections</label>
+              <div class="space-y-1">
+                <template x-for="o in detailIntroObjections" :key="o.objection || o">
+                  <div class="text-xs bg-gray-50 rounded p-2">
+                    <div class="font-medium text-gray-700" x-text="o.objection || o"></div>
+                    <div x-show="o.response" class="text-gray-500 mt-0.5" x-text="'→ ' + o.response"></div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex flex-wrap gap-2 pt-2 border-t">
+              <button @click="copyFullEmail()" class="text-xs bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700">Copy full email</button>
+              <button @click="markIntroSent()" x-show="detailIntro?.status !== 'sent'" class="text-xs bg-green-600 text-white px-3 py-1.5 rounded hover:bg-green-700">Mark sent</button>
+              <button @click="generateIntro()" class="text-xs border border-gray-300 px-3 py-1.5 rounded hover:bg-gray-50" :disabled="generatingIntro">
+                <span x-show="!generatingIntro">Regenerate</span><span x-show="generatingIntro">Generating...</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <!-- Profile Tab -->
+        <div x-show="detailTab === 'profile'">
+          <div class="flex items-center justify-between mb-3">
+            <div>
+              <h3 class="text-sm font-semibold">Business Profile</h3>
+              <div class="flex items-center gap-2 mt-1">
+                <span class="text-xs px-2 py-0.5 rounded-full"
+                  :class="businessProfile?.generation_depth === 'deep' ? 'bg-purple-100 text-purple-700' : businessProfile?.generation_depth === 'enriched' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'"
+                  x-text="(businessProfile?.generation_depth || 'basic').toUpperCase()"></span>
+                <span class="text-xs text-gray-400" x-text="'Confidence: ' + (businessProfile?.confidence_score || 0) + '%'"></span>
+              </div>
+            </div>
+            <button @click="deepResearchProfile()" class="text-xs bg-purple-600 text-white px-3 py-1.5 rounded hover:bg-purple-700" :disabled="deepResearching || businessProfile?.generation_depth === 'deep'">
+              <span x-show="!deepResearching">Deep Research ($)</span>
+              <span x-show="deepResearching">Researching...</span>
+            </button>
+          </div>
+
+          <div x-show="businessProfile" class="space-y-3">
+            <!-- Company Type editor -->
+            <div class="bg-gray-50 rounded-lg p-3">
+              <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Company Type</div>
+              <div class="flex items-center gap-2">
+                <select x-model="currentProspectType" @change="updateProspectType()" class="flex-1 border border-gray-300 rounded px-2 py-1 text-sm">
+                  <option value="">-- select type --</option>
+                  <option>Regional Carrier</option>
+                  <option>National Carrier</option>
+                  <option>Specialty Carrier</option>
+                  <option>National Brokerage</option>
+                  <option>National Agency</option>
+                  <option>Wholesale Broker</option>
+                  <option>MGA</option>
+                  <option>Technology</option>
+                  <option>Marketplace</option>
+                </select>
+                <span x-show="updatingType" class="text-xs text-blue-600">Updating...</span>
+              </div>
+              <div class="text-xs text-gray-400 mt-1">Changing the type auto-updates the behavior profile and rescores the pipeline</div>
+            </div>
+
+            <div x-show="businessProfile?.one_liner">
+              <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">One-liner</div>
+              <div class="text-sm bg-blue-50 rounded p-2 italic" x-text="businessProfile?.one_liner"></div>
+            </div>
+
+            <div x-show="businessProfile?.long_description">
+              <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Description</div>
+              <div class="text-sm text-gray-700" x-text="businessProfile?.long_description"></div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div x-show="businessProfile?.headquarters">
+                <div class="text-xs text-gray-500">HQ</div>
+                <div class="text-sm" x-text="businessProfile?.headquarters"></div>
+              </div>
+              <div x-show="businessProfile?.founded_year">
+                <div class="text-xs text-gray-500">Founded</div>
+                <div class="text-sm" x-text="businessProfile?.founded_year"></div>
+              </div>
+              <div x-show="businessProfile?.market_position">
+                <div class="text-xs text-gray-500">Market Position</div>
+                <div class="text-sm capitalize" x-text="businessProfile?.market_position"></div>
+              </div>
+              <div x-show="businessProfile?.pricing_model">
+                <div class="text-xs text-gray-500">Pricing Model</div>
+                <div class="text-sm" x-text="businessProfile?.pricing_model"></div>
+              </div>
+            </div>
+
+            <div x-show="businessProfile?.primary_products && businessProfile.primary_products.length">
+              <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Products</div>
+              <div class="flex flex-wrap gap-1">
+                <template x-for="p in businessProfile?.primary_products || []">
+                  <span class="text-xs bg-gray-100 rounded px-2 py-0.5" x-text="p"></span>
+                </template>
+              </div>
+            </div>
+
+            <div x-show="businessProfile?.target_customer_types && businessProfile.target_customer_types.length">
+              <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Target Customers</div>
+              <div class="flex flex-wrap gap-1">
+                <template x-for="t in businessProfile?.target_customer_types || []">
+                  <span class="text-xs bg-blue-50 text-blue-700 rounded px-2 py-0.5" x-text="t"></span>
+                </template>
+              </div>
+            </div>
+
+            <div x-show="businessProfile?.sales_channels && businessProfile.sales_channels.length">
+              <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Sales Channels</div>
+              <div class="flex flex-wrap gap-1">
+                <template x-for="c in businessProfile?.sales_channels || []">
+                  <span class="text-xs bg-green-50 text-green-700 rounded px-2 py-0.5" x-text="c"></span>
+                </template>
+              </div>
+            </div>
+
+            <div x-show="businessProfile?.main_competitors && businessProfile.main_competitors.length">
+              <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Competitors</div>
+              <div class="space-y-1">
+                <template x-for="c in businessProfile?.main_competitors || []">
+                  <div class="text-xs bg-gray-50 rounded p-1.5">
+                    <span class="font-medium" x-text="c.name || c"></span>
+                    <span x-show="c.differentiator" class="text-gray-400" x-text="' - ' + c.differentiator"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <div x-show="businessProfile?.key_differentiators">
+              <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Differentiators</div>
+              <div class="text-sm text-gray-700" x-text="businessProfile?.key_differentiators"></div>
+            </div>
+
+            <div x-show="businessProfile?.value_chain_upstream && businessProfile.value_chain_upstream.length" class="bg-yellow-50 rounded p-2">
+              <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Value Chain (Upstream Needs)</div>
+              <div class="flex flex-wrap gap-1">
+                <template x-for="u in businessProfile?.value_chain_upstream || []">
+                  <span class="text-xs bg-white rounded px-2 py-0.5 border border-yellow-200" x-text="u"></span>
+                </template>
+              </div>
+            </div>
+
+            <div x-show="businessProfile?.value_chain_downstream && businessProfile.value_chain_downstream.length" class="bg-blue-50 rounded p-2">
+              <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Value Chain (Downstream Needs)</div>
+              <div class="flex flex-wrap gap-1">
+                <template x-for="d in businessProfile?.value_chain_downstream || []">
+                  <span class="text-xs bg-white rounded px-2 py-0.5 border border-blue-200" x-text="d"></span>
+                </template>
+              </div>
+            </div>
+
+            <div x-show="businessProfile?.recent_developments && businessProfile.recent_developments.length">
+              <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Recent Developments</div>
+              <div class="space-y-1">
+                <template x-for="r in businessProfile?.recent_developments || []">
+                  <div class="text-xs text-gray-600 pl-2 border-l-2 border-gray-200" x-text="r"></div>
+                </template>
+              </div>
+            </div>
+
+            <div class="text-xs text-gray-300 pt-3 border-t">
+              Generated by: <span x-text="businessProfile?.generated_by"></span> |
+              Last refreshed: <span x-text="formatDate(businessProfile?.last_refreshed)"></span>
+            </div>
+          </div>
+
+          <div x-show="!businessProfile" class="text-xs text-gray-400 py-4 text-center">
+            No profile yet. Loading...
+          </div>
+        </div>
+
+        <!-- Behavior Tab -->
+        <div x-show="detailTab === 'behavior'">
+          <h3 class="text-sm font-semibold mb-2">Behavior Profile</h3>
+          <div class="space-y-2 mb-3">
+            <div><label class="text-xs text-gray-500">Sales Motion</label><select x-model="behaviorForm.sales_motion" class="w-full border rounded px-2 py-1 text-sm"><option value="">--</option><option>transactional</option><option>consultative</option><option>enterprise</option></select></div>
+            <div><label class="text-xs text-gray-500">Partner Model</label><select x-model="behaviorForm.partner_model" class="w-full border rounded px-2 py-1 text-sm"><option value="">--</option><option>self-serve</option><option>managed</option><option>co-sell</option><option>unknown</option></select></div>
+            <div><label class="text-xs text-gray-500">Decision Speed</label><select x-model="behaviorForm.decision_speed" class="w-full border rounded px-2 py-1 text-sm"><option value="">--</option><option>fast</option><option>moderate</option><option>bureaucratic</option></select></div>
+            <div><label class="text-xs text-gray-500">Culture</label><select x-model="behaviorForm.culture" class="w-full border rounded px-2 py-1 text-sm"><option value="">--</option><option>innovation-forward</option><option>balanced</option><option>legacy</option></select></div>
+            <div><label class="text-xs text-gray-500">Customer Segment</label><select x-model="behaviorForm.customer_segment" class="w-full border rounded px-2 py-1 text-sm"><option value="">--</option><option>SMB</option><option>mid-market</option><option>enterprise</option><option>mixed</option></select></div>
+            <div><label class="text-xs text-gray-500">Partnership History</label><textarea x-model="behaviorForm.partnership_history" rows="2" class="w-full border rounded px-2 py-1 text-sm"></textarea></div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button @click="saveBehavior()" class="text-xs bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700">Save</button>
+            <span class="text-xs text-gray-400" x-show="behaviorForm.assessed_by" x-text="'Assessed by: ' + behaviorForm.assessed_by"></span>
+          </div>
+          <div class="mt-3 bg-gray-50 rounded p-2" x-show="detailEntry?.friction_coefficient != 1.0">
+            <span class="text-xs text-gray-500">Friction Coefficient vs active client:</span>
+            <span class="text-sm font-bold ml-1" x-text="detailEntry?.friction_coefficient"></span>
+          </div>
+        </div>
+
+        <!-- Intent Tab -->
+        <div x-show="detailTab === 'intent'">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-sm font-semibold">Intent Signals</h3>
+            <div class="flex items-center gap-2">
+              <span class="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded" x-text="'Multiplier: ' + (detailEntry?.intent_multiplier || 0.8) + 'x'"></span>
+            </div>
+          </div>
+          <!-- Signal List -->
+          <div class="space-y-2 mb-3">
+            <template x-for="sig in detailIntentSignals" :key="sig.id">
+              <div class="bg-gray-50 rounded p-2 relative group">
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-xs px-1.5 py-0.5 rounded font-medium bg-gray-100 text-gray-700" x-text="sig.signal_type.replace('_',' ')"></span>
+                  <span class="text-xs px-1.5 py-0.5 rounded font-medium" :class="{'bg-red-100 text-red-700': sig.urgency==='high', 'bg-amber-100 text-amber-700': sig.urgency==='moderate', 'bg-gray-100 text-gray-500': sig.urgency==='low'}" x-text="sig.urgency"></span>
+                  <span class="text-xs text-gray-300 ml-auto" x-text="sig.signal_date || ''"></span>
+                  <button @click="deleteIntentSignal(sig.id)" class="text-gray-300 hover:text-red-500 text-sm hidden group-hover:block">&times;</button>
+                </div>
+                <div class="text-xs text-gray-700" x-text="sig.signal_detail"></div>
+                <a x-show="sig.source_url" :href="sig.source_url" target="_blank" class="text-xs text-blue-500 hover:underline">Source</a>
+              </div>
+            </template>
+            <div x-show="detailIntentSignals.length === 0" class="text-xs text-gray-400">No intent signals. Add manually or research with AI.</div>
+          </div>
+          <!-- Add Signal Form -->
+          <div class="bg-gray-50 rounded p-3 mb-2">
+            <div class="text-xs font-medium text-gray-500 mb-2">Add Signal</div>
+            <div class="grid grid-cols-2 gap-2 mb-2">
+              <select x-model="intentForm.signal_type" class="border rounded px-2 py-1 text-xs"><option value="hiring">Hiring</option><option value="expansion">Expansion</option><option value="funding">Funding</option><option value="partnership_announcement">Partnership</option><option value="strategic_statement">Strategic</option><option value="product_launch">Product Launch</option></select>
+              <select x-model="intentForm.urgency" class="border rounded px-2 py-1 text-xs"><option value="high">High</option><option value="moderate">Moderate</option><option value="low">Low</option></select>
+            </div>
+            <textarea x-model="intentForm.signal_detail" rows="2" class="w-full border rounded px-2 py-1 text-xs mb-2" placeholder="Describe the signal..."></textarea>
+            <button @click="addIntentSignal()" class="text-xs bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700" :disabled="!intentForm.signal_detail.trim()">Add Signal</button>
+          </div>
+        </div>
+
+        <!-- Activity Tab -->
+        <div x-show="detailTab === 'activity'"><div class="space-y-2"><template x-for="a in detailActivity" :key="a.id"><div class="border-l-2 border-gray-200 pl-3 py-1"><div class="text-xs text-gray-500" x-text="(a.action || '').replace(/_/g, ' ')"></div><div class="text-xs text-gray-700" x-text="a.new_value || a.notes || ''"></div><div class="text-xs text-gray-300" x-text="formatDate(a.created_at)"></div></div></template><div x-show="detailActivity.length === 0" class="text-xs text-gray-400">No activity.</div></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- New Client Modal (Smart Search) -->
+  <div x-show="showNewClientModal" x-cloak class="fixed inset-0 z-50 flex items-start justify-center pt-24">
+    <div class="absolute inset-0 bg-black/30" @click="showNewClientModal = false"></div>
+    <div class="relative bg-white rounded-xl shadow-xl w-[500px]">
+      <!-- Search Header -->
+      <div class="p-4 border-b">
+        <div class="flex items-center gap-2 mb-1">
+          <h2 class="text-lg font-bold">Add New Client</h2>
+          <button @click="showNewClientModal = false" class="ml-auto text-gray-400 hover:text-gray-600">&times;</button>
+        </div>
+        <div class="relative">
+          <input type="text" x-model="clientSearchQuery" @input="debounceClientSearch()" placeholder="Search HubSpot or Apollo..." class="w-full border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 pl-9" autofocus />
+          <svg class="absolute left-3 top-3 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+        </div>
+      </div>
+
+      <!-- Search Results -->
+      <div class="max-h-[350px] overflow-y-auto" x-show="clientSearchQuery.length >= 2 || showManualEntry">
+
+        <!-- Loading -->
+        <div x-show="clientSearching" class="p-4 text-center text-sm text-gray-400">Searching...</div>
+
+        <!-- HubSpot Results -->
+        <div x-show="!clientSearching && hubspotResults.length > 0">
+          <div class="px-4 pt-3 pb-1 text-xs font-bold text-gray-400 uppercase">Your CRM</div>
+          <template x-for="r in hubspotResults" :key="'hs-' + r.hubspot_id">
+            <div @click="selectSearchResult(r)" class="px-4 py-2.5 hover:bg-blue-50 cursor-pointer flex items-center justify-between">
+              <div>
+                <div class="text-sm font-medium" x-text="r.name"></div>
+                <div class="text-xs text-gray-400" x-text="[r.domain, r.industry].filter(Boolean).join(' · ')"></div>
+              </div>
+              <div class="flex items-center gap-2">
+                <span x-show="r.employees" class="text-xs text-gray-400" x-text="r.employees?.toLocaleString() + ' emp'"></span>
+                <span class="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">In CRM</span>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <!-- Apollo Results -->
+        <div x-show="!clientSearching && apolloResults.length > 0">
+          <div class="px-4 pt-3 pb-1 text-xs font-bold text-gray-400 uppercase border-t" :class="hubspotResults.length > 0 ? '' : ''">All Companies</div>
+          <template x-for="r in apolloResults" :key="'ap-' + r.apollo_id">
+            <div @click="selectSearchResult(r)" class="px-4 py-2.5 hover:bg-blue-50 cursor-pointer flex items-center justify-between">
+              <div>
+                <div class="text-sm font-medium" x-text="r.name"></div>
+                <div class="text-xs text-gray-400" x-text="[r.domain, r.industry].filter(Boolean).join(' · ')"></div>
+              </div>
+              <div class="flex items-center gap-2">
+                <span x-show="r.employees" class="text-xs text-gray-400" x-text="r.employees?.toLocaleString() + ' emp'"></span>
+                <span class="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">New</span>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <!-- No Results -->
+        <div x-show="!clientSearching && clientSearchQuery.length >= 2 && hubspotResults.length === 0 && apolloResults.length === 0 && !showManualEntry" class="p-4 text-center text-sm text-gray-400">
+          No results found.
+        </div>
+
+        <!-- Manual Entry Form -->
+        <div x-show="showManualEntry" class="p-4 border-t">
+          <div class="text-xs font-bold text-gray-400 uppercase mb-2">Manual Entry</div>
+          <input type="text" x-model="manualClientName" placeholder="Company name *" class="w-full border rounded-lg px-3 py-2 text-sm mb-2" />
+          <input type="text" x-model="manualClientDomain" placeholder="Website / domain (optional)" class="w-full border rounded-lg px-3 py-2 text-sm mb-2" />
+          <input type="text" x-model="manualClientDesc" placeholder="Brief description (optional)" class="w-full border rounded-lg px-3 py-2 text-sm mb-3" />
+          <button @click="createClientManual()" class="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 w-full" :disabled="researchingClient || !manualClientName.trim()">
+            <span x-show="!researchingClient">Research & Create</span><span x-show="researchingClient">Researching...</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="p-3 border-t text-center" x-show="!showManualEntry">
+        <button @click="showManualEntry = true; manualClientName = clientSearchQuery" class="text-xs text-blue-600 hover:underline">Can't find it? Enter manually</button>
+      </div>
+
+      <!-- Creating Status -->
+      <div x-show="researchingClient" class="p-4 border-t bg-blue-50 rounded-b-xl">
+        <div class="text-sm text-blue-700 font-medium" x-text="clientResearchStatus"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import Modal -->
+  <div x-show="showImportModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center">
+    <div class="absolute inset-0 bg-black/30" @click="showImportModal = false"></div>
+    <div class="relative bg-white rounded-xl shadow-xl w-[500px] p-6">
+      <h2 class="text-lg font-bold mb-3">Import Companies</h2>
+      <textarea x-model="importText" rows="6" class="w-full border rounded-lg p-3 text-sm mb-4" placeholder="Paste company names, one per line..."></textarea>
+      <div class="flex gap-2 justify-end">
+        <button @click="showImportModal = false" class="text-sm border px-4 py-2 rounded-lg hover:bg-gray-50">Cancel</button>
+        <button @click="importCompanies()" class="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700" :disabled="importing"><span x-show="!importing">Import & Add to Pipeline</span><span x-show="importing">Importing...</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Client Refresh Menu (appears on client selection) -->
+  <div x-show="showRefreshMenu"
+    class="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-white rounded-xl shadow-2xl border border-gray-200 w-[440px]"
+    style="display: none;">
+    <div class="p-4 border-b flex items-center justify-between">
+      <div>
+        <h3 class="text-sm font-bold" x-text="'Refresh data for ' + (activeClient?.name || 'client')"></h3>
+        <p class="text-xs text-gray-400">Choose what you want to update</p>
+      </div>
+      <button @click="showRefreshMenu = false" class="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+    </div>
+
+    <div class="p-3 space-y-2">
+      <!-- Option 1: Refresh profile (free) -->
+      <button @click="refreshOption('profile')" class="w-full text-left bg-gray-50 hover:bg-blue-50 rounded-lg p-3 flex items-start gap-3 transition-colors" :disabled="refreshing">
+        <div class="text-lg">📋</div>
+        <div class="flex-1">
+          <div class="text-sm font-medium">Refresh Business Profile</div>
+          <div class="text-xs text-gray-500">Re-run HubSpot + Apollo enrichment. Free.</div>
+        </div>
+        <span x-show="refreshStatus === 'profile'" class="text-xs text-blue-600 animate-pulse">Running...</span>
+      </button>
+
+      <!-- Option 2: Enrich pipeline (free) -->
+      <button @click="refreshOption('pipeline')" class="w-full text-left bg-gray-50 hover:bg-blue-50 rounded-lg p-3 flex items-start gap-3 transition-colors" :disabled="refreshing">
+        <div class="text-lg">🏢</div>
+        <div class="flex-1">
+          <div class="text-sm font-medium">Refresh All Companies in Pipeline</div>
+          <div class="text-xs text-gray-500">Re-enrich every prospect profile. Free.</div>
+        </div>
+        <span x-show="refreshStatus === 'pipeline'" class="text-xs text-blue-600 animate-pulse">Running...</span>
+      </button>
+
+      <!-- Option 3: Rescore (free) -->
+      <button @click="refreshOption('rescore')" class="w-full text-left bg-gray-50 hover:bg-blue-50 rounded-lg p-3 flex items-start gap-3 transition-colors" :disabled="refreshing">
+        <div class="text-lg">🎯</div>
+        <div class="flex-1">
+          <div class="text-sm font-medium">Rescore Pipeline</div>
+          <div class="text-xs text-gray-500">Recalculate all Matchmaker Scores with current criteria. Free.</div>
+        </div>
+        <span x-show="refreshStatus === 'rescore'" class="text-xs text-blue-600 animate-pulse">Running...</span>
+      </button>
+
+      <!-- Option 4: Deep research (cost-gated) -->
+      <button @click="refreshOption('deep')" class="w-full text-left bg-purple-50 hover:bg-purple-100 rounded-lg p-3 flex items-start gap-3 border border-purple-200 transition-colors" :disabled="refreshing">
+        <div class="text-lg">🔬</div>
+        <div class="flex-1">
+          <div class="text-sm font-medium text-purple-800">Deep Research via Claude AI</div>
+          <div class="text-xs text-purple-600">Full business intelligence: products, competitors, value chain. <span class="font-semibold">~$0.05</span></div>
+        </div>
+        <span x-show="refreshStatus === 'deep'" class="text-xs text-purple-600 animate-pulse">Queueing...</span>
+      </button>
+
+      <!-- Option 5: Full free refresh (profile + pipeline + rescore, no paid stuff) -->
+      <button @click="refreshOption('all')" class="w-full text-left bg-green-50 hover:bg-green-100 rounded-lg p-3 flex items-start gap-3 border border-green-200 transition-colors" :disabled="refreshing">
+        <div class="text-lg">⚡</div>
+        <div class="flex-1">
+          <div class="text-sm font-medium text-green-800">Full Free Refresh</div>
+          <div class="text-xs text-green-600">All three free actions above in one click. No cost. No approval prompts.</div>
+        </div>
+        <span x-show="refreshStatus === 'all'" class="text-xs text-green-700 animate-pulse">Running...</span>
+      </button>
+    </div>
+
+    <div class="p-3 border-t bg-gray-50 rounded-b-xl flex items-center justify-between">
+      <span class="text-xs text-gray-400">Last refresh: <span x-text="lastRefreshInfo || 'unknown'"></span></span>
+      <button @click="showRefreshMenu = false" class="text-xs text-gray-500 hover:text-gray-700">Skip for now</button>
+    </div>
+  </div>
+
+  <!-- Deep Research Offer Dialog (shown after prospect promoted to client) -->
+  <div x-show="showDeepResearchOffer" class="fixed inset-0 z-50 flex items-center justify-center" style="display: none;">
+    <div class="absolute inset-0 bg-black/30" @click="skipDeepResearch()"></div>
+    <div class="relative bg-white rounded-xl shadow-2xl w-[480px] p-6">
+      <div class="flex items-start gap-3 mb-4">
+        <div class="text-3xl">✓</div>
+        <div class="flex-1">
+          <h2 class="text-lg font-bold mb-1" x-text="deepResearchOfferName + ' added as client'"></h2>
+          <p class="text-sm text-gray-500">They now have a basic heuristic profile, default criteria, and the full pipeline scored. Free.</p>
+        </div>
+      </div>
+
+      <div class="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-4">
+        <div class="flex items-start gap-2 mb-2">
+          <div class="text-xl">🔬</div>
+          <div>
+            <div class="text-sm font-medium text-purple-900">Want to upgrade to AI-powered Deep Research?</div>
+            <div class="text-xs text-purple-700 mt-1">Claude will research the company's products, competitors, value chain, market position, and recent developments. Replaces the basic heuristic profile with rich, tailored data.</div>
+            <div class="text-xs text-purple-600 mt-2 font-semibold">Cost: ~$0.05 (requires your approval after queuing)</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex gap-2 justify-end">
+        <button @click="skipDeepResearch()" class="text-sm border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-50">Skip (stay free)</button>
+        <button @click="approveDeepResearch()" class="text-sm bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700">Queue Deep Research ($0.05)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div x-show="toastMessage" x-cloak
+    x-transition:enter="transition ease-out duration-300"
+    x-transition:enter-start="opacity-0 translate-y-2"
+    x-transition:enter-end="opacity-100 translate-y-0"
+    x-transition:leave="transition ease-in duration-200"
+    x-transition:leave-start="opacity-100 translate-y-0"
+    x-transition:leave-end="opacity-0 translate-y-2"
+    class="fixed bottom-6 right-6 z-50 bg-gray-900 text-white px-5 py-3 rounded-lg shadow-lg text-sm max-w-md">
+    <span x-text="toastMessage"></span>
+  </div>
+
+  <!-- Generic Tip Popup (column headers, group headers, tier badges) -->
+  <div x-show="tipVisible && tip" x-cloak
+    :style="'position: fixed; top: ' + tipY + 'px; left: ' + tipX + 'px; z-index: 60; width: 300px;'"
+    class="bg-white border border-gray-300 rounded-lg shadow-2xl text-xs pointer-events-none">
+    <template x-if="tip">
+      <div>
+        <div class="px-3 py-2 border-b bg-blue-50">
+          <div class="font-bold text-sm text-gray-900" x-text="tip.title"></div>
+        </div>
+        <div class="p-3 space-y-2">
+          <div class="text-gray-700 leading-snug" x-text="tip.body"></div>
+          <div x-show="tip.scale && tip.scale.length" class="pt-2 border-t border-gray-200 space-y-0.5">
+            <template x-for="row in tip.scale || []" :key="row[0]">
+              <div class="flex items-start gap-2 text-[11px]">
+                <span class="font-mono font-bold text-blue-600 w-12 flex-shrink-0" x-text="row[0]"></span>
+                <span class="text-gray-600" x-text="row[1]"></span>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <!-- Layer Info Popup (hover over Layer 1/2/3 tiles) -->
+  <div x-show="layerInfoVisible && layerInfo" x-cloak
+    :style="'position: fixed; top: ' + layerInfoY + 'px; left: ' + layerInfoX + 'px; z-index: 60; width: 360px;'"
+    class="bg-white border border-gray-300 rounded-lg shadow-2xl text-xs pointer-events-none">
+    <template x-if="layerInfo">
+      <div>
+        <div class="px-3 py-2 border-b bg-blue-50">
+          <div class="font-bold text-sm text-gray-900" x-text="layerInfo.title"></div>
+          <div class="text-[10px] uppercase tracking-wide text-blue-600 mt-0.5" x-text="layerInfo.subtitle"></div>
+        </div>
+        <div class="p-3 space-y-2">
+          <div>
+            <div class="text-[10px] font-semibold text-gray-400 uppercase mb-1">What it does</div>
+            <div class="text-gray-700" x-text="layerInfo.what"></div>
+          </div>
+          <div>
+            <div class="text-[10px] font-semibold text-gray-400 uppercase mb-1">Why it matters</div>
+            <div class="text-gray-700" x-text="layerInfo.why"></div>
+          </div>
+          <div>
+            <div class="text-[10px] font-semibold text-gray-400 uppercase mb-1">How to use it</div>
+            <div class="text-gray-700" x-text="layerInfo.how"></div>
+          </div>
+          <div x-show="layerInfo.effect" class="pt-2 border-t">
+            <div class="text-[10px] font-semibold text-gray-400 uppercase mb-1">Effect on the score</div>
+            <div class="text-gray-700 italic" x-text="layerInfo.effect"></div>
+          </div>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <!-- Criterion Info Popup (hover over criteria tile) -->
+  <div x-show="criterionInfoVisible && criterionInfo" x-cloak
+    :style="'position: fixed; top: ' + criterionInfoY + 'px; left: ' + criterionInfoX + 'px; z-index: 60; width: 320px;'"
+    class="bg-white border border-gray-300 rounded-lg shadow-2xl text-xs pointer-events-none">
+    <template x-if="criterionInfo">
+      <div>
+        <div class="px-3 py-2 border-b bg-blue-50">
+          <div class="font-bold text-sm text-gray-900" x-text="criterionInfo.name"></div>
+          <div class="text-[10px] uppercase tracking-wide text-blue-600 mt-0.5" x-text="criterionInfo.group_name || ''"></div>
+        </div>
+        <div class="p-3 space-y-3">
+          <div>
+            <div class="text-[10px] font-semibold text-gray-400 uppercase mb-1">What it measures</div>
+            <div class="text-gray-700" x-text="criterionInfo.description"></div>
+          </div>
+          <div x-show="criterionInfo.why_it_matters">
+            <div class="text-[10px] font-semibold text-gray-400 uppercase mb-1">Why it matters</div>
+            <div class="text-gray-700" x-text="criterionInfo.why_it_matters"></div>
+          </div>
+          <div>
+            <div class="text-[10px] font-semibold text-gray-400 uppercase mb-1">How it's scored (0–5)</div>
+            <div class="space-y-1 text-[11px]">
+              <div class="flex items-start gap-2"><span class="text-green-600 font-bold w-3">5</span><span class="text-gray-600">Clear, strong match on this dimension</span></div>
+              <div class="flex items-start gap-2"><span class="text-green-500 font-bold w-3">4</span><span class="text-gray-600">Mostly aligned with minor gaps</span></div>
+              <div class="flex items-start gap-2"><span class="text-yellow-600 font-bold w-3">3</span><span class="text-gray-600">Partial fit, some signal present</span></div>
+              <div class="flex items-start gap-2"><span class="text-amber-600 font-bold w-3">2</span><span class="text-gray-600">Weak fit, thin evidence</span></div>
+              <div class="flex items-start gap-2"><span class="text-red-500 font-bold w-3">1</span><span class="text-gray-600">Poor fit or contradicting evidence</span></div>
+              <div class="flex items-start gap-2"><span class="text-gray-400 font-bold w-3">0</span><span class="text-gray-600">No data or explicit mismatch</span></div>
+            </div>
+          </div>
+          <div class="pt-2 border-t text-[10px] text-gray-400 italic">
+            Click to toggle this criterion on or off for the current lens. Weight controls how much it affects the final score.
+          </div>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <!-- Score Breakdown Popup (hover over Matchmaker Score) -->
+  <div x-show="breakdownVisible && breakdown" x-cloak
+    :style="'position: fixed; top: ' + (breakdownY) + 'px; left: ' + (breakdownX) + 'px; z-index: 60; min-width: 340px; max-width: 420px;'"
+    class="bg-white border border-gray-300 rounded-lg shadow-2xl text-xs pointer-events-none">
+    <template x-if="breakdown">
+      <div>
+        <div class="px-3 py-2 border-b flex items-center justify-between" :class="{'bg-green-50': breakdown.tier === 'hot', 'bg-yellow-50': breakdown.tier === 'warm', 'bg-gray-50': breakdown.tier === 'monitor', 'bg-red-50': breakdown.tier === 'pass', 'bg-gray-100': breakdown.tier === 'filtered'}">
+          <div>
+            <div class="font-bold text-sm" x-text="breakdown.prospect_name"></div>
+            <div class="text-[10px] uppercase tracking-wide text-gray-500" x-text="breakdown.tier + ' · Matchmaker ' + (breakdown.matchmaker_score ?? '-')"></div>
+          </div>
+        </div>
+        <div x-show="breakdown.filtered" class="px-3 py-3 text-red-700 bg-red-50 border-b">
+          <div class="font-bold">Filtered out</div>
+          <div class="text-[11px]" x-text="breakdown.filter_reason"></div>
+        </div>
+        <div x-show="!breakdown.filtered" class="p-3 space-y-3">
+          <!-- PMF block -->
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <span class="font-semibold text-gray-700">PMF · <span x-text="breakdown.pmf.score ?? '0'"></span><span class="text-gray-400">/100</span></span>
+              <span class="text-gray-400">× <span x-text="Math.round(breakdown.pmf.weight * 100)"></span>% = <span class="font-bold text-gray-900" x-text="breakdown.pmf.contribution"></span></span>
+            </div>
+            <div class="space-y-0.5 ml-1">
+              <template x-for="c in breakdown.pmf.criteria" :key="c.name">
+                <div class="flex items-start gap-2">
+                  <span class="inline-block w-4 text-center flex-shrink-0" :class="c.score >= 4 ? 'text-green-600' : (c.score >= 2 ? 'text-yellow-600' : 'text-red-500')" x-text="c.score >= 4 ? '✓' : (c.score >= 2 ? '◐' : '✗')"></span>
+                  <span class="flex-1 text-gray-700" x-text="c.name"></span>
+                  <span class="text-gray-400 tabular-nums" x-text="c.score + '/5 × w' + c.weight"></span>
+                </div>
+              </template>
+              <div x-show="breakdown.pmf.criteria.length === 0" class="text-gray-400 italic">No criteria active</div>
+            </div>
+          </div>
+          <!-- RS block -->
+          <div class="flex items-center justify-between pt-2 border-t">
+            <span class="font-semibold text-gray-700">RS · <span x-text="breakdown.rs.score ?? '0'"></span><span class="text-gray-400">/5</span></span>
+            <span class="text-gray-400">× <span x-text="Math.round(breakdown.rs.weight * 100)"></span>% = <span class="font-bold text-gray-900" x-text="breakdown.rs.contribution"></span></span>
+          </div>
+          <!-- Multipliers -->
+          <div class="pt-2 border-t space-y-1">
+            <div class="flex items-center justify-between">
+              <span class="text-gray-500">Friction</span>
+              <span :class="breakdown.friction >= 1 ? 'text-green-600' : (breakdown.friction >= 0.8 ? 'text-yellow-600' : 'text-red-500')" x-text="'× ' + breakdown.friction"></span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-gray-500">Intent</span>
+              <span :class="breakdown.intent > 1 ? 'text-green-600' : 'text-gray-500'" x-text="'× ' + breakdown.intent"></span>
+            </div>
+          </div>
+          <!-- Formula -->
+          <div class="pt-2 border-t font-mono text-[10px] text-gray-500 leading-snug" x-text="breakdown.formula"></div>
+        </div>
+      </div>
+    </template>
+  </div>
+
+</body>
+</html>

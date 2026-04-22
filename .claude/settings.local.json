@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/vinnieg/Downloads/**)",
+      "Bash(unzip -l /Users/vinnieg/Downloads/BD_Pipeline_Agent_Bundle.zip)",
+      "Bash(unzip -o /Users/vinnieg/Downloads/BD_Pipeline_Agent_Bundle.zip -d .)",
+      "Bash(mkdir -p /Users/vinnieg/Projects)",
+      "Bash(cp -R /Users/vinnieg/Downloads/PipelineBuild /Users/vinnieg/Projects/PipelineBuild)",
+      "Read(//Users/vinnieg/Projects/**)"
+    ]
+  }
+}
