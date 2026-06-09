@@ -183,10 +183,44 @@ The warm introduction wins. This is by design. The user can adjust the weighting
 
 ---
 
+## ENRICHMENT (FREE STACK)
+
+Enrich every business and every contact BEFORE scoring. This stack stays inside free tiers. Work the sources in order and never block on one source. Fall back to the next.
+
+### Business enrichment (free)
+
+Goal: fill in description, estimated revenue, employee count, industry, HQ, founded year, and LinkedIn for each company.
+
+1. **Apollo Organization Enrichment** (free tier, effectively unlimited). Enrich by domain.
+   - One company: `apollo_organizations_enrich` with the company domain.
+   - A whole pipeline: `apollo_organizations_bulk_enrich` (up to 10 domains per call). This is the cheapest way to enrich a full list.
+   - Returns: description, revenue estimate, employee count, industry, HQ, founded year, LinkedIn, technologies.
+2. **Web search fallback.** For small, stealth, or no-match companies, pull the same fields from the company website and LinkedIn via web search.
+
+### Contact enrichment (free)
+
+Goal: confirm a named decision maker and fill in title, seniority, LinkedIn, and (credits permitting) email.
+
+1. **HubSpot first.** If the person already exists in HubSpot, pull their record there. It is free and avoids spending an Apollo credit.
+2. **Identify the person.** Apollo People Search (discovering NEW people) needs a paid plan, so do not start there. Find the decision maker's name via web search, the company leadership page, or LinkedIn.
+3. **Apollo People Match** (free tier, limited monthly credits). Enrich a KNOWN person.
+   - One person: `apollo_people_match` with name plus company domain.
+   - Several people: `apollo_people_bulk_match`.
+   - Returns: verified title, seniority, LinkedIn, and email/phone when a credit is available.
+4. **Web search fallback.** When Apollo credits run out, capture name, title, and LinkedIn from web search and mark the email as "not verified."
+
+### Credit discipline (stay free)
+
+- Org enrichment is effectively unlimited. People email reveals are the scarce resource on the free tier.
+- Spend people credits only on Hot and Warm tier companies. For Monitor and Pass, capture name, title, and LinkedIn from web search and skip the email reveal.
+- Batch with the bulk endpoints (10 per call) to minimize calls and credit use.
+
+---
+
 ## TOOLS AVAILABLE
 
 - **Web search** for company research and decision maker identification
-- **Apollo.io** for org enrichment (firmographics). Note: People Search requires paid plan. Org bulk enrichment works on free tier.
+- **Apollo.io** for enrichment. Org enrichment (single and bulk up to 10) works on the free tier. People Match enriches KNOWN contacts on the free tier (email reveal uses limited monthly credits). People Search (discovering new contacts) needs a paid plan. See the ENRICHMENT (FREE STACK) section above.
 - **HubSpot** for existing contacts, companies, and activity history
 - **Gmail** for email thread history with target companies
 - **Google Calendar** for past meeting history
