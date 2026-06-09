@@ -56,17 +56,16 @@ Save this as a completed company profile for future reference.
 
 The free enrichment engine. Costs $0 per run. It executes inside this Claude Project using web search and the Apollo free tier. It does NOT call the paid Anthropic API, so there are no per-use token charges. Run it before scoring so PMF is based on real firmographics, not guesses.
 
-**Two layers, each with a free fallback so nothing blocks the run:**
+**Two layers. Web search is the default zero-cost path; Apollo is an optional booster for Hot and Warm companies only.**
 
 **Layer 1 - Business (firmographics)**
-1. Apollo Organization Enrichment by domain. One company: `apollo_organizations_enrich`. Whole pipeline: `apollo_organizations_bulk_enrich` (10 domains per call). Free and effectively unlimited.
-2. Web search fallback for any company Apollo cannot match.
+1. Web search (default, $0, no credits). Pull description, employees, revenue, HQ, founded year, LinkedIn, and value-chain position from the company site, LinkedIn, and trade press.
+2. Apollo Organization Enrichment (optional, Hot/Warm only). `apollo_organizations_enrich` or `apollo_organizations_bulk_enrich` (10 per call). Costs 1 credit per company found from the limited free pool.
 
 **Layer 2 - Contacts (decision makers)**
-1. HubSpot first for people already in the CRM. Free, and it avoids spending an Apollo credit.
-2. Find the named decision maker via web search or the company leadership page (do NOT use Apollo People Search, that one is paid).
-3. Apollo People Match to enrich the KNOWN person: `apollo_people_match` (or `apollo_people_bulk_match`). Free tier, limited monthly email-reveal credits. Spend reveals only on Hot and Warm companies.
-4. Web search fallback. Capture name, title, and LinkedIn, and mark the email "not verified."
+1. HubSpot first for people already in the CRM. Free.
+2. Web search (default, $0). Find the decision maker's name, title, and LinkedIn from the company leadership page. Mark emails "not verified."
+3. Apollo People Match (optional, Hot/Warm only). `apollo_people_match` / `apollo_people_bulk_match` to verify an email for a KNOWN person. Costs 1 credit per match. Do NOT use Apollo People Search (paid).
 
 **Required output (one block per company, paste-ready):**
 ```
@@ -83,11 +82,11 @@ Value chain:      [where they sit; upstream/downstream relevance]
 Decision makers:
   - [Name] | [Title] | [LinkedIn] | [email + verified? y/n] | [source]
   - [Name] | [Title] | [LinkedIn] | [email + verified? y/n] | [source]
-Sources used:     [Apollo org / Apollo People Match / HubSpot / web search]
-Cost:             $0 (free tier + web search)
+Sources used:     [web search / HubSpot / Apollo org / Apollo People Match]
+Cost:             $0 by default (web search). Apollo boosters, if used, cost 1 credit each.
 ```
 
-**Batch mode ("Enrich the pipeline"):** group prospects 10 at a time, run `apollo_organizations_bulk_enrich`, then loop the contact layer only for Hot and Warm tiers to conserve credits. Write results back into the company profile and `relationship_map.md`.
+**Batch mode ("Enrich the pipeline"):** enrich every company by web search first ($0). Optionally run `apollo_organizations_bulk_enrich` (10 at a time) on Hot and Warm tiers only to fill gaps. Write results back into the company profile and `relationship_map.md`.
 
 ---
 
@@ -230,36 +229,32 @@ Enrich every business and every contact BEFORE scoring. This stack stays inside 
 
 Goal: fill in description, estimated revenue, employee count, industry, HQ, founded year, and LinkedIn for each company.
 
-1. **Apollo Organization Enrichment** (free tier, effectively unlimited). Enrich by domain.
-   - One company: `apollo_organizations_enrich` with the company domain.
-   - A whole pipeline: `apollo_organizations_bulk_enrich` (up to 10 domains per call). This is the cheapest way to enrich a full list.
+1. **Web search (default, $0, no credits).** Pull the fields from the company website, LinkedIn, and trade press. This is the zero-cost path and enriches the entire pipeline for free.
+2. **Apollo Organization Enrichment (optional booster).** Use only when web search leaves gaps and you want structured firmographics. Costs 1 Apollo credit per company found (0 if not found) from a limited monthly free-tier pool, so reserve it for Hot and Warm companies.
+   - One company: `apollo_organizations_enrich`. Up to 10 at once: `apollo_organizations_bulk_enrich`.
    - Returns: description, revenue estimate, employee count, industry, HQ, founded year, LinkedIn, technologies.
-2. **Web search fallback.** For small, stealth, or no-match companies, pull the same fields from the company website and LinkedIn via web search.
 
 ### Contact enrichment (free)
 
 Goal: confirm a named decision maker and fill in title, seniority, LinkedIn, and (credits permitting) email.
 
-1. **HubSpot first.** If the person already exists in HubSpot, pull their record there. It is free and avoids spending an Apollo credit.
-2. **Identify the person.** Apollo People Search (discovering NEW people) needs a paid plan, so do not start there. Find the decision maker's name via web search, the company leadership page, or LinkedIn.
-3. **Apollo People Match** (free tier, limited monthly credits). Enrich a KNOWN person.
-   - One person: `apollo_people_match` with name plus company domain.
-   - Several people: `apollo_people_bulk_match`.
-   - Returns: verified title, seniority, LinkedIn, and email/phone when a credit is available.
-4. **Web search fallback.** When Apollo credits run out, capture name, title, and LinkedIn from web search and mark the email as "not verified."
+1. **HubSpot first.** If the person already exists in HubSpot, pull their record there. Free, and it avoids spending an Apollo credit.
+2. **Web search (default, $0).** Find the decision maker's name, title, and LinkedIn via web search and the company leadership page. This covers the whole pipeline for free. Mark emails "not verified."
+3. **Apollo People Match (optional booster, Hot/Warm only).** Only to verify an email or phone for a KNOWN person. Costs 1 Apollo credit per match found from the limited free pool. One person: `apollo_people_match`. Several: `apollo_people_bulk_match`. Do NOT use Apollo People Search (paid).
 
 ### Credit discipline (stay free)
 
-- Org enrichment is effectively unlimited. People email reveals are the scarce resource on the free tier.
-- Spend people credits only on Hot and Warm tier companies. For Monitor and Pass, capture name, title, and LinkedIn from web search and skip the email reveal.
-- Batch with the bulk endpoints (10 per call) to minimize calls and credit use.
+- Web search is the zero-cost default and enriches the entire pipeline for $0.
+- Apollo is a limited monthly free-credit pool, NOT unlimited. Every org enrichment or email reveal that finds a match costs 1 credit. Treat credits as scarce.
+- Spend Apollo credits only on Hot and Warm companies, and only when you need structured firmographics or a verified email. For Monitor and Pass, use web search and stop.
+- When you do use Apollo, batch with the bulk endpoints (10 per call).
 
 ---
 
 ## TOOLS AVAILABLE
 
 - **Web search** for company research and decision maker identification
-- **Apollo.io** for enrichment. Org enrichment (single and bulk up to 10) works on the free tier. People Match enriches KNOWN contacts on the free tier (email reveal uses limited monthly credits). People Search (discovering new contacts) needs a paid plan. See the ENRICHMENT (FREE STACK) section above.
+- **Apollo.io** for enrichment. Draws on a limited monthly free-credit pool: org enrichment and People Match each cost 1 credit per match found (0 if not found). People Search (discovering new contacts) needs a paid plan. Default to web search to stay at $0; use Apollo only on Hot/Warm companies. See the ENRICHMENT (FREE STACK) section above.
 - **HubSpot** for existing contacts, companies, and activity history
 - **Gmail** for email thread history with target companies
 - **Google Calendar** for past meeting history
