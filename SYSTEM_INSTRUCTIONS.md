@@ -52,6 +52,45 @@ Save this as a completed company profile for future reference.
 
 ---
 
+### "Enrich [Company]" or "Enrich the pipeline"
+
+The free enrichment engine. Costs $0 per run. It executes inside this Claude Project using web search and the Apollo free tier. It does NOT call the paid Anthropic API, so there are no per-use token charges. Run it before scoring so PMF is based on real firmographics, not guesses.
+
+**Two layers, each with a free fallback so nothing blocks the run:**
+
+**Layer 1 - Business (firmographics)**
+1. Apollo Organization Enrichment by domain. One company: `apollo_organizations_enrich`. Whole pipeline: `apollo_organizations_bulk_enrich` (10 domains per call). Free and effectively unlimited.
+2. Web search fallback for any company Apollo cannot match.
+
+**Layer 2 - Contacts (decision makers)**
+1. HubSpot first for people already in the CRM. Free, and it avoids spending an Apollo credit.
+2. Find the named decision maker via web search or the company leadership page (do NOT use Apollo People Search, that one is paid).
+3. Apollo People Match to enrich the KNOWN person: `apollo_people_match` (or `apollo_people_bulk_match`). Free tier, limited monthly email-reveal credits. Spend reveals only on Hot and Warm companies.
+4. Web search fallback. Capture name, title, and LinkedIn, and mark the email "not verified."
+
+**Required output (one block per company, paste-ready):**
+```
+Company:          [name]
+Domain:           [domain]
+Description:      [1-2 sentences]
+Industry:         [industry]
+Employees:        [count or range]
+Est. revenue:     [range]
+HQ:               [city, state/country]
+Founded:          [year]
+LinkedIn:         [url]
+Value chain:      [where they sit; upstream/downstream relevance]
+Decision makers:
+  - [Name] | [Title] | [LinkedIn] | [email + verified? y/n] | [source]
+  - [Name] | [Title] | [LinkedIn] | [email + verified? y/n] | [source]
+Sources used:     [Apollo org / Apollo People Match / HubSpot / web search]
+Cost:             $0 (free tier + web search)
+```
+
+**Batch mode ("Enrich the pipeline"):** group prospects 10 at a time, run `apollo_organizations_bulk_enrich`, then loop the contact layer only for Hot and Warm tiers to conserve credits. Write results back into the company profile and `relationship_map.md`.
+
+---
+
 ### "Generate scoring criteria for [Company Name]"
 
 Based on the company profile, auto-generate 4-6 custom scoring criteria. Each criterion must:
