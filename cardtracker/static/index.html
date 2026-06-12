@@ -40,17 +40,18 @@
     <section id="view-add" class="view hidden">
       <div id="capture-step" class="capture">
         <h2>Scan a card</h2>
-        <p class="muted">Take a photo of the front and back. We'll read the text on your device — free, no account, no cost.</p>
+        <p class="muted">On a phone, tap a box to use the camera. On a laptop, tap a box to choose a saved photo, or use <b>Use camera</b> below to snap with your webcam. Reading is free and on-device.</p>
         <div class="shots">
           <label class="shot" id="front-shot">
             <input type="file" accept="image/*" capture="environment" id="front-input" hidden />
-            <span class="shot-label">Front<br /><small>tap to capture</small></span>
+            <span class="shot-label">Front<br /><small>tap to add</small></span>
           </label>
           <label class="shot" id="back-shot">
             <input type="file" accept="image/*" capture="environment" id="back-input" hidden />
             <span class="shot-label">Back<br /><small>optional</small></span>
           </label>
         </div>
+        <button id="camera-btn" type="button" class="btn btn-ghost">📷 Use camera (webcam)</button>
         <button id="scan-btn" class="btn btn-primary" disabled>Scan &amp; continue</button>
         <p id="scan-msg" class="muted"></p>
       </div>
@@ -174,6 +175,22 @@
         <button type="submit" class="btn btn-primary">Add</button>
       </form>
       <div id="checklist-items" class="checklist-items"></div>
+    </div>
+  </div>
+
+  <!-- Webcam capture modal (laptop/desktop) -->
+  <div id="camera-modal" class="modal hidden">
+    <div class="modal-card cam">
+      <div class="modal-head">
+        <h2 id="cam-label">📷 Capture FRONT</h2>
+        <button type="button" id="cam-close" class="btn btn-ghost">Close</button>
+      </div>
+      <div class="cam-stage"><video id="cam-video" autoplay playsinline muted></video></div>
+      <p id="cam-msg" class="muted">Hold the card up to your camera and fill the frame.</p>
+      <div class="form-actions">
+        <button type="button" id="cam-capture" class="btn btn-primary">📸 Capture front</button>
+        <button type="button" id="cam-done" class="btn btn-ghost">Done</button>
+      </div>
     </div>
   </div>
 

@@ -226,6 +226,12 @@ input, select, textarea {
 .cl-del { background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: 13px; }
 .cl-del:hover { color: #f87171; }
 
+/* Webcam capture */
+.modal-card.cam { max-width: 560px; }
+.cam-stage { background: #000; border-radius: 12px; overflow: hidden; margin: 8px 0; }
+#cam-video { width: 100%; max-height: 60vh; display: block; object-fit: contain; background: #000; }
+#camera-btn { width: 100%; margin-bottom: 10px; }
+
 /* Sale fieldset in edit modal */
 .sale-box { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-top: 14px; }
 .sale-box legend { color: var(--muted); font-size: 12px; padding: 0 6px; }

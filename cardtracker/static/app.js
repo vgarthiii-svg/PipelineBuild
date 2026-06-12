@@ -61,6 +61,7 @@ $("#filter-status").addEventListener("change", loadInventory);
 
 // ---------- Add flow (free) ----------
 function resetAdd() {
+  closeCamera();
   state.front = state.back = state.uploaded = null;
   $("#front-input").value = ""; $("#back-input").value = "";
   ["#front-shot","#back-shot"].forEach((s) => { $(s).style.backgroundImage = ""; $(s).classList.remove("filled"); });
@@ -84,6 +85,66 @@ function bindShot(inputId, shotId, key) {
 }
 bindShot("#front-input", "#front-shot", "front");
 bindShot("#back-input", "#back-shot", "back");
+
+function applyShot(key, file) {
+  state[key] = file;
+  const shot = key === "front" ? "#front-shot" : "#back-shot";
+  $(shot).style.backgroundImage = `url('${URL.createObjectURL(file)}')`;
+  $(shot).classList.add("filled");
+  $("#scan-btn").disabled = !state.front;
+}
+
+// ---------- Webcam capture (laptop/desktop; works over localhost) ----------
+const cam = { target: "front", stream: null };
+
+async function openCamera() {
+  setCamTarget(state.front ? "back" : "front");
+  $("#cam-msg").textContent = "Hold the card up to your camera and fill the frame.";
+  $("#camera-modal").classList.remove("hidden");
+  try {
+    cam.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+    $("#cam-video").srcObject = cam.stream;
+  } catch (err) {
+    const name = err && err.name ? err.name : "error";
+    $("#cam-msg").textContent =
+      "Couldn't open the camera (" + name + "). Close this and tap a box to choose a saved photo, or use your phone.";
+  }
+}
+
+function setCamTarget(t) {
+  cam.target = t;
+  $("#cam-label").textContent = "📷 Capture " + t.toUpperCase();
+  $("#cam-capture").textContent = "📸 Capture " + t;
+}
+
+function captureShot() {
+  const v = $("#cam-video");
+  if (!v.videoWidth) { $("#cam-msg").textContent = "Camera still starting — try again in a second."; return; }
+  const canvas = document.createElement("canvas");
+  canvas.width = v.videoWidth;
+  canvas.height = v.videoHeight;
+  canvas.getContext("2d").drawImage(v, 0, 0);
+  canvas.toBlob((blob) => {
+    if (!blob) return;
+    applyShot(cam.target, new File([blob], cam.target + ".jpg", { type: "image/jpeg" }));
+    if (cam.target === "front") {
+      setCamTarget("back");
+      $("#cam-msg").textContent = "Front captured ✓ — now show the back, or tap Done.";
+    } else {
+      $("#cam-msg").textContent = "Back captured ✓ — tap Done.";
+    }
+  }, "image/jpeg", 0.9);
+}
+
+function closeCamera() {
+  if (cam.stream) { cam.stream.getTracks().forEach((t) => t.stop()); cam.stream = null; }
+  $("#camera-modal").classList.add("hidden");
+}
+
+$("#camera-btn").addEventListener("click", openCamera);
+$("#cam-capture").addEventListener("click", captureShot);
+$("#cam-done").addEventListener("click", closeCamera);
+$("#cam-close").addEventListener("click", closeCamera);
 
 $("#scan-btn").addEventListener("click", async () => {
   if (!state.front) return;
