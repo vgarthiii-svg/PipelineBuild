@@ -161,13 +161,20 @@ $("#scan-btn").addEventListener("click", async () => {
     if (!up.ok) throw new Error("Upload failed (" + up.status + ")");
     state.uploaded = await up.json();
 
-    // 2) Best-effort on-device text scan (free). Skips silently if unavailable.
-    let note = "✍️ Type the card details below.";
-    const guess = await tryOcr(btn);
-    if (guess) {
-      const f = $("#review-form");
-      Object.entries(guess.fields).forEach(([k, v]) => { if (f.elements[k] && v) f.elements[k].value = v; });
-      note = "🔎 Scanned the text on your device (free). Please double-check the details.";
+    // 2) Best-effort on-device text scan (free). Reads the BACK if available
+    //    (card backs scan much better than glossy fronts).
+    const f = $("#review-form");
+    const r = await tryOcr(btn);
+    let note;
+    if (r.status === "ok") {
+      Object.entries(r.fields).forEach(([k, v]) => { if (f.elements[k] && v) f.elements[k].value = v; });
+      note = r.filled > 0
+        ? "🔎 Read the card on your device (free) and filled what it could. Please double-check every field."
+        : "🔎 Couldn't make out much automatically (foil/fonts are hard for a free scanner). Photos saved — just type the details. Tip: a clear shot of the BACK reads best.";
+    } else if (r.status === "unavailable") {
+      note = "⚠️ The free scanner didn't load (it needs a small one-time internet download). Photos saved — type the details, or retry on stronger Wi-Fi.";
+    } else {
+      note = "✍️ Photos saved — type the card details below.";
     }
     $("#vision-note").textContent = note;
     $("#capture-step").classList.add("hidden");
@@ -180,31 +187,91 @@ $("#scan-btn").addEventListener("click", async () => {
 });
 
 async function tryOcr(btn) {
-  if (typeof Tesseract === "undefined" || !state.front) return null;
+  if (typeof Tesseract === "undefined") return { status: "unavailable" };
+  const img = state.back || state.front; // backs read much better than glossy fronts
+  if (!img) return { status: "error" };
   try {
-    btn.innerHTML = '<span class="spinner"></span> Reading card (free)…';
-    const { data } = await Tesseract.recognize(state.front, "eng");
-    return parseOcr(data.text || "");
+    const { data } = await Tesseract.recognize(img, "eng", {
+      logger: (m) => {
+        if (m.status === "recognizing text")
+          btn.innerHTML = '<span class="spinner"></span> Reading card… ' + Math.round((m.progress || 0) * 100) + "%";
+      },
+    });
+    const fields = parseOcr(data.text || "");
+    const filled = ["player","year","brand","set_name","card_number","team","sport"].filter((k) => fields[k]).length;
+    return { status: "ok", fields, filled };
   } catch {
-    return null; // offline or failed → fall back to manual
+    return { status: "error" };
   }
 }
 
+const BRANDS = ["Topps","Panini","Bowman","Upper Deck","Fleer","Donruss","Score","Leaf","Pro Set","O-Pee-Chee"];
+const SETS = ["Chrome","Prizm","Select","Mosaic","Optic","Stadium Club","Heritage","Finest","Allen & Ginter","Gallery","Contenders","Chronicles","Sapphire","Gypsy Queen","Big League","Inception","Obsidian","National Treasures","Flawless","Immaculate","Hoops","Revolution","Update","Archives","Donruss"];
+const TEAMS = {
+  Baseball: ["Diamondbacks","Braves","Orioles","Red Sox","Cubs","White Sox","Reds","Guardians","Rockies","Tigers","Astros","Royals","Angels","Dodgers","Marlins","Brewers","Twins","Mets","Yankees","Athletics","Phillies","Pirates","Padres","Giants","Mariners","Cardinals","Rays","Rangers","Blue Jays","Nationals"],
+  Basketball: ["Hawks","Celtics","Nets","Hornets","Bulls","Cavaliers","Mavericks","Nuggets","Pistons","Warriors","Rockets","Pacers","Clippers","Lakers","Grizzlies","Heat","Bucks","Timberwolves","Pelicans","Knicks","Thunder","Magic","76ers","Suns","Trail Blazers","Kings","Spurs","Raptors","Jazz","Wizards"],
+  Football: ["Cardinals","Falcons","Ravens","Bills","Panthers","Bears","Bengals","Browns","Cowboys","Broncos","Lions","Packers","Texans","Colts","Jaguars","Chiefs","Raiders","Chargers","Rams","Dolphins","Vikings","Patriots","Saints","Giants","Jets","Eagles","Steelers","49ers","Seahawks","Buccaneers","Commanders","Titans"],
+  Hockey: ["Ducks","Bruins","Sabres","Flames","Hurricanes","Blackhawks","Avalanche","Blue Jackets","Stars","Red Wings","Oilers","Panthers","Wild","Canadiens","Predators","Devils","Islanders","Senators","Flyers","Penguins","Sharks","Kraken","Blues","Lightning","Maple Leafs","Canucks","Golden Knights","Capitals","Coyotes"],
+};
+const STAT_HINTS = {
+  Baseball: ["HOME RUN"," HR "," RBI "," AVG "," ERA ","BATTING","PITCHER","INNINGS","STOLEN"],
+  Basketball: ["REBOUND","ASSIST","POINTS PER"," PPG "," NBA ","FIELD GOAL","FREE THROW"],
+  Football: ["YARDS","TOUCHDOWN","RUSHING","RECEIVING","PASSING","QUARTERBACK"," NFL ","RECEPTION"],
+  Hockey: ["GOALS"," NHL ","PENALTY","POWER PLAY","SHUTOUT","FACEOFF"],
+};
+const NAME_BANNED = [...BRANDS, ...SETS, "ROOKIE","CARD","OFFICIAL","COMPANY","BASEBALL","BASKETBALL","FOOTBALL","HOCKEY","STATS","CAREER","LEAGUE","DRAFT","MLB","NBA","NFL","NHL","ALL STAR","WORLD SERIES"].map((w) => w.toUpperCase());
+
+function titleCase(s) { return s.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase()); }
+
 function parseOcr(text) {
   const fields = {};
+  const upper = " " + text.toUpperCase().replace(/[\n\r]+/g, " ") + " ";
+  const lines = text.split("\n").map((l) => l.replace(/\s+/g, " ").trim()).filter(Boolean);
+
+  // Year — prefer a season (2023-24); else any 19xx/20xx
+  const season = text.match(/\b(20\d{2})[-/](\d{2})\b/);
   const yr = text.match(/\b(19|20)\d{2}\b/);
-  if (yr) fields.year = yr[0];
-  const num = text.match(/(?:#|no\.?\s*)\s*([A-Z]{0,3}-?\d{1,4})/i);
-  if (num) fields.card_number = num[1];
-  // Player guess: a 2-3 word, mostly-letters line near the top
-  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (season) fields.year = season[1] + "-" + season[2];
+  else if (yr) fields.year = yr[0];
+
+  // Brand & set/product
+  for (const b of BRANDS) if (upper.includes(b.toUpperCase())) { fields.brand = b; break; }
+  for (const s of SETS) if (upper.includes(s.toUpperCase())) { fields.set_name = s; break; }
+
+  // Card number — "#123", "No. 123", "Card 123", "RC-12"
+  const num = text.match(/(?:card\s*(?:no\.?|number|#)?|no\.?|#)\s*[:#]?\s*([A-Z]{0,4}-?\d{1,4})\b/i);
+  if (num && num[1] && /\d/.test(num[1])) fields.card_number = num[1].toUpperCase();
+
+  // Sport from stat keywords
+  let sport = "";
+  for (const [sp, hints] of Object.entries(STAT_HINTS)) {
+    if (hints.some((h) => upper.includes(h))) { sport = sp; break; }
+  }
+  // Team (and sport fallback from the team's league)
+  let foundTeam = "";
+  for (const [sp, teams] of Object.entries(TEAMS)) {
+    for (const t of teams) {
+      if (upper.includes(" " + t.toUpperCase() + " ")) { foundTeam = t; if (!sport) sport = sp; break; }
+    }
+    if (foundTeam) break;
+  }
+  if (foundTeam) fields.team = foundTeam;
+  if (sport) fields.sport = sport;
+  if (/\b(rookie|rc)\b/i.test(text)) fields.is_rookie = "yes";
+
+  // Player — a 2-3 word alphabetic line that isn't a brand/set/team/keyword
   const candidate = lines.find((l) => {
-    const words = l.split(/\s+/);
-    return words.length >= 2 && words.length <= 3 && /^[A-Za-z.'\- ]{5,28}$/.test(l);
+    const words = l.split(" ");
+    if (words.length < 2 || words.length > 3) return false;
+    if (!/^[A-Za-z.'\- ]{5,28}$/.test(l)) return false;
+    const U = l.toUpperCase();
+    if (NAME_BANNED.some((w) => U.includes(w))) return false;
+    if (foundTeam && U.includes(foundTeam.toUpperCase())) return false;
+    return true;
   });
-  if (candidate) fields.player = candidate.replace(/\s+/g, " ").trim();
-  fields.notes = "Scanned text:\n" + text.replace(/\n{2,}/g, "\n").trim().slice(0, 400);
-  return { fields };
+  if (candidate) fields.player = /[a-z]/.test(candidate) ? candidate : titleCase(candidate);
+
+  return fields;
 }
 
 $("#cancel-add").addEventListener("click", () => showView("inventory"));
