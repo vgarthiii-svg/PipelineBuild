@@ -11,9 +11,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.database import Base, engine, IMAGE_DIR
+from app.database import Base, engine, ensure_schema, IMAGE_DIR
 from app.models import *  # noqa: F401,F403 - register models
-from app.routers import cards, dashboard
+from app.routers import cards, dashboard, checklists
 
 app = FastAPI(title="Sports Card Tracker", version="1.0.0")
 
@@ -25,11 +25,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Ensure tables exist as soon as the app is imported (robust for any ASGI runner)
-Base.metadata.create_all(bind=engine)
+# Create tables and apply any forward-only column additions on import
+ensure_schema()
 
 app.include_router(cards.router)
 app.include_router(dashboard.router)
+app.include_router(checklists.router)
 
 # Serve uploaded card images
 app.mount("/images", StaticFiles(directory=IMAGE_DIR), name="images")
@@ -42,7 +43,7 @@ if os.path.isdir(_STATIC_DIR):
 
 @app.on_event("startup")
 def startup():
-    Base.metadata.create_all(bind=engine)
+    ensure_schema()
 
 
 @app.get("/")

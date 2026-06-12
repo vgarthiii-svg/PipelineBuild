@@ -181,3 +181,52 @@ input, select, textarea {
 
 .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+.stat.bad .num { color: #f87171; }
+.view-title { margin: 4px 0 14px; font-size: 18px; }
+
+/* Sales list */
+.sales-list { display: flex; flex-direction: column; gap: 10px; }
+.sale-row { display: flex; align-items: center; gap: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 10px; cursor: pointer; }
+.sale-row:hover { border-color: var(--accent); }
+.sale-thumb { width: 44px; height: 60px; border-radius: 6px; background: #0b1220 center/cover no-repeat; flex-shrink: 0; }
+.sale-main { flex: 1; min-width: 0; }
+.sale-main .player { font-weight: 600; font-size: 14px; }
+.sale-main .meta { color: var(--muted); font-size: 12px; }
+.sale-fig { text-align: right; font-size: 14px; }
+.sale-fig .profit { font-size: 13px; font-weight: 600; }
+.profit.pos, .pos { color: var(--accent-2); }
+.profit.neg, .neg { color: #f87171; }
+
+/* Forms inline */
+.inline-form { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.inline-form input { flex: 1 1 90px; background: var(--panel); border: 1px solid var(--border); color: var(--text); border-radius: 9px; padding: 9px 10px; font-size: 14px; }
+
+/* Checklist sets */
+.set-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.set-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px; cursor: pointer; }
+.set-card:hover { border-color: var(--accent); }
+.set-head { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 8px; }
+.set-head span { color: var(--muted); }
+.set-sub { color: var(--muted); font-size: 12px; margin-top: 6px; }
+.bar { height: 8px; background: var(--panel-2); border-radius: 999px; overflow: hidden; }
+.bar-fill { height: 100%; background: var(--accent-2); border-radius: 999px; transition: width .2s ease; }
+
+/* Checklist modal */
+.modal-head { display: flex; justify-content: space-between; align-items: center; }
+.progress-wrap { margin: 10px 0 14px; }
+.checklist-actions { display: flex; gap: 8px; margin-bottom: 12px; }
+.checklist-items { display: flex; flex-direction: column; gap: 4px; max-height: 50vh; overflow-y: auto; }
+.cl-item { display: grid; grid-template-columns: 22px 48px 1fr auto 24px; align-items: center; gap: 8px; padding: 8px; border-radius: 8px; background: var(--panel); border: 1px solid var(--border); cursor: pointer; }
+.cl-item.owned { background: #14321f; border-color: #1e5631; }
+.cl-item input { width: 18px; height: 18px; }
+.cl-num { color: var(--muted); font-size: 12px; }
+.cl-player { font-size: 14px; }
+.cl-var { color: var(--muted); font-size: 12px; }
+.cl-del { background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: 13px; }
+.cl-del:hover { color: #f87171; }
+
+/* Sale fieldset in edit modal */
+.sale-box { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-top: 14px; }
+.sale-box legend { color: var(--muted); font-size: 12px; padding: 0 6px; }
+.profit-line { margin: 10px 2px 0; font-size: 14px; }

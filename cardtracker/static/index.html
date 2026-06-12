@@ -13,15 +13,15 @@
     <nav class="tabs">
       <button class="tab active" data-view="inventory">Inventory</button>
       <button class="tab" data-view="add">+ Add</button>
+      <button class="tab" data-view="sales">Sales</button>
+      <button class="tab" data-view="checklists">Checklists</button>
     </nav>
   </header>
 
   <main id="app">
-    <!-- Dashboard stats -->
-    <section id="stats" class="stats"></section>
-
     <!-- INVENTORY VIEW -->
     <section id="view-inventory" class="view">
+      <section id="stats" class="stats"></section>
       <div class="toolbar">
         <input id="search" type="search" placeholder="Search player, set, team, INV id…" />
         <select id="filter-status">
@@ -40,7 +40,7 @@
     <section id="view-add" class="view hidden">
       <div id="capture-step" class="capture">
         <h2>Scan a card</h2>
-        <p class="muted">Take a photo of the front and back. Claude will read the details for you.</p>
+        <p class="muted">Take a photo of the front and back. We'll read the text on your device — free, no account, no cost.</p>
         <div class="shots">
           <label class="shot" id="front-shot">
             <input type="file" accept="image/*" capture="environment" id="front-input" hidden />
@@ -51,11 +51,10 @@
             <span class="shot-label">Back<br /><small>optional</small></span>
           </label>
         </div>
-        <button id="scan-btn" class="btn btn-primary" disabled>Read card with Claude</button>
+        <button id="scan-btn" class="btn btn-primary" disabled>Scan &amp; continue</button>
         <p id="scan-msg" class="muted"></p>
       </div>
 
-      <!-- Review form (hidden until extracted) -->
       <form id="review-form" class="review hidden">
         <h2>Review &amp; save</h2>
         <p id="vision-note" class="pill"></p>
@@ -69,21 +68,15 @@
           <label>Team<input name="team" /></label>
           <label>Sport<input name="sport" /></label>
           <label>Rookie?
-            <select name="is_rookie">
-              <option value="">—</option>
-              <option value="yes">Yes</option>
-              <option value="no">No</option>
-            </select>
+            <select name="is_rookie"><option value="">—</option><option value="yes">Yes</option><option value="no">No</option></select>
           </label>
           <label>Condition<input name="condition" /></label>
           <label>Status
-            <select name="status">
-              <option value="in_stock">In stock</option>
-              <option value="listed">Listed</option>
-              <option value="sold">Sold</option>
-            </select>
+            <select name="status"><option value="in_stock">In stock</option><option value="listed">Listed</option><option value="sold">Sold</option></select>
           </label>
-          <label>Purchase price ($)<input name="purchase_price" type="number" step="0.01" /></label>
+          <label>Purchase price ($)<input name="purchase_price" type="number" step="0.01" inputmode="decimal" /></label>
+          <label>Purchased from<input name="purchase_source" placeholder="eBay, show, breaker…" /></label>
+          <label>Purchase date<input name="purchase_date" type="date" /></label>
         </div>
         <label class="full">Notes<textarea name="notes" rows="2"></textarea></label>
         <div class="form-actions">
@@ -92,9 +85,31 @@
         </div>
       </form>
     </section>
+
+    <!-- SALES VIEW -->
+    <section id="view-sales" class="view hidden">
+      <h2 class="view-title">Sales &amp; Profit</h2>
+      <section id="sales-stats" class="stats"></section>
+      <div id="sales-list" class="sales-list"></div>
+      <p id="empty-sales" class="empty hidden">No sales yet. Open a card in your inventory and mark it <b>Sold</b> with a sale price.</p>
+    </section>
+
+    <!-- CHECKLISTS VIEW -->
+    <section id="view-checklists" class="view hidden">
+      <h2 class="view-title">Set Checklists</h2>
+      <form id="new-set-form" class="inline-form">
+        <input name="name" placeholder="Set (e.g. Chrome)" required />
+        <input name="year" placeholder="Year" />
+        <input name="brand" placeholder="Brand" />
+        <input name="sport" placeholder="Sport" />
+        <button type="submit" class="btn btn-primary">+ New checklist</button>
+      </form>
+      <div id="set-list" class="set-list"></div>
+      <p id="empty-sets" class="empty hidden">No checklists yet. Create one above, then add cards or import a CSV.</p>
+    </section>
   </main>
 
-  <!-- Edit modal -->
+  <!-- Edit card modal -->
   <div id="edit-modal" class="modal hidden">
     <div class="modal-card">
       <h2 id="edit-title">Edit card</h2>
@@ -110,15 +125,22 @@
           <label>Sport<input name="sport" /></label>
           <label>Condition<input name="condition" /></label>
           <label>Status
-            <select name="status">
-              <option value="in_stock">In stock</option>
-              <option value="listed">Listed</option>
-              <option value="sold">Sold</option>
-            </select>
+            <select name="status"><option value="in_stock">In stock</option><option value="listed">Listed</option><option value="sold">Sold</option></select>
           </label>
-          <label>Purchase price ($)<input name="purchase_price" type="number" step="0.01" /></label>
-          <label>Sale price ($)<input name="sale_price" type="number" step="0.01" /></label>
+          <label>Purchase price ($)<input name="purchase_price" type="number" step="0.01" inputmode="decimal" /></label>
+          <label>Purchased from<input name="purchase_source" /></label>
         </div>
+        <fieldset class="sale-box">
+          <legend>Sale details (fill in when sold)</legend>
+          <div class="grid2">
+            <label>Sale price ($)<input name="sale_price" type="number" step="0.01" inputmode="decimal" /></label>
+            <label>Sale date<input name="sale_date" type="date" /></label>
+            <label>Sold on<input name="sale_platform" placeholder="eBay, COMC, in person…" /></label>
+            <label>Fees ($)<input name="sale_fees" type="number" step="0.01" inputmode="decimal" /></label>
+            <label>Shipping ($)<input name="sale_shipping" type="number" step="0.01" inputmode="decimal" /></label>
+          </div>
+          <p id="edit-profit" class="profit-line"></p>
+        </fieldset>
         <label class="full">Notes<textarea name="notes" rows="2"></textarea></label>
         <div class="form-actions">
           <button type="button" id="delete-card" class="btn btn-danger">Delete</button>
@@ -130,6 +152,33 @@
     </div>
   </div>
 
+  <!-- Checklist detail modal -->
+  <div id="checklist-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2 id="checklist-title">Checklist</h2>
+        <button type="button" id="close-checklist" class="btn btn-ghost">Close</button>
+      </div>
+      <div id="checklist-progress" class="progress-wrap"></div>
+      <div class="checklist-actions">
+        <label class="btn btn-ghost" id="import-label">
+          ⬆ Import CSV
+          <input type="file" accept=".csv,text/csv" id="import-input" hidden />
+        </label>
+        <button type="button" id="delete-set" class="btn btn-danger">Delete checklist</button>
+      </div>
+      <form id="add-item-form" class="inline-form">
+        <input name="card_number" placeholder="#" style="max-width:70px" />
+        <input name="player" placeholder="Player" required />
+        <input name="variation" placeholder="Variation" />
+        <button type="submit" class="btn btn-primary">Add</button>
+      </form>
+      <div id="checklist-items" class="checklist-items"></div>
+    </div>
+  </div>
+
+  <!-- On-device OCR (free, loaded from CDN; skipped gracefully if offline) -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

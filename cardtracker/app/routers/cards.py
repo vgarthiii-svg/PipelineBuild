@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db, IMAGE_DIR
 from app.models import Card, VALID_STATUSES
-from app.schemas import CardCreate, CardOut, CardUpdate, ExtractResult
+from app.schemas import CardCreate, CardOut, CardUpdate, ExtractResult, UploadResult
 from app.vision import extract_card
 
 router = APIRouter(prefix="/api/cards", tags=["cards"])
@@ -40,6 +40,21 @@ def _next_card_id(db: Session) -> str:
         if m:
             max_n = max(max_n, int(m.group(1)))
     return f"INV-{max_n + 1:04d}"
+
+
+@router.post("/upload", response_model=UploadResult)
+def upload(
+    front: UploadFile = File(...),
+    back: UploadFile = File(None),
+):
+    """
+    Free path (no AI, no cost): save the front/back photos and return their
+    filenames. The browser handles any on-device text scanning itself; this
+    endpoint just stores the images.
+    """
+    front_name = _save_upload(front)
+    back_name = _save_upload(back) if back is not None else ""
+    return UploadResult(front_image=front_name, back_image=back_name)
 
 
 @router.post("/extract", response_model=ExtractResult)
@@ -79,6 +94,8 @@ def create_card(payload: CardCreate, db: Session = Depends(get_db)):
         back_image=payload.back_image,
         purchase_price=payload.purchase_price,
         estimated_value=payload.estimated_value,
+        purchase_date=payload.purchase_date,
+        purchase_source=payload.purchase_source,
         **payload.model_dump(
             include={
                 "player", "year", "brand", "set_name", "card_number",
@@ -127,15 +144,21 @@ def export_csv(db: Session = Depends(get_db)):
     writer.writerow([
         "Card ID", "Player", "Year", "Brand", "Set", "Card #", "Variation",
         "Team", "Sport", "Rookie", "Condition", "Status",
-        "Purchase Price", "Sale Price", "Est. Value", "Notes",
-        "Front Image", "Back Image",
+        "Purchase Date", "Purchase Source", "Purchase Price",
+        "Sale Date", "Sale Platform", "Sale Price", "Sale Fees", "Sale Shipping",
+        "Net Profit", "Est. Value", "Notes", "Front Image", "Back Image",
     ])
     for c in cards:
         writer.writerow([
             c.card_id, c.player, c.year, c.brand, c.set_name, c.card_number,
             c.variation, c.team, c.sport, c.is_rookie, c.condition, c.status,
+            c.purchase_date, c.purchase_source,
             c.purchase_price if c.purchase_price is not None else "",
+            c.sale_date, c.sale_platform,
             c.sale_price if c.sale_price is not None else "",
+            c.sale_fees if c.sale_fees is not None else "",
+            c.sale_shipping if c.sale_shipping is not None else "",
+            c.net_profit if c.net_profit is not None else "",
             c.estimated_value if c.estimated_value is not None else "",
             c.notes, c.front_image, c.back_image,
         ])

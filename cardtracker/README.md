@@ -8,17 +8,39 @@ phases) purchases, sales P&L, and set checklists.
 This lives in a `cardtracker/` subfolder and is completely independent of the
 unrelated "BD Pipeline Agent" in the repo root.
 
-## What's built (Phase 1)
+## What's built
 
-- **Scan a card** → front + back photo → Claude Vision extracts player, year,
-  brand, set, card #, parallel/insert, team, sport, rookie flag, condition →
-  you review/edit → save. Auto-assigns the next `INV-####` id.
-- **Inventory** list with thumbnails, text search, and status filters.
-- **Dashboard** with totals, in-stock count, cost basis, and profit.
-- **Edit / delete** any card; mark as In stock / Listed / Sold.
-- **CSV export** (`Card ID, Front Image, Back Image, …`) — feeds your existing
-  Google Sheet workflow.
-- Works **without an API key** as a fully manual tracker.
+**Inventory**
+- **Scan a card** → front + back photo → it's stored and logged with the next
+  `INV-####` id. A **free on-device text scanner** (runs in your browser, no
+  account, no cost) pre-fills what it can read; you review/edit and save.
+- Inventory list with thumbnails, text search, and status filters.
+- Edit / delete any card; status workflow In stock → Listed → Sold.
+
+**Purchases & Sales (P&L)**
+- Record cost basis, purchase date, and source on each card.
+- Mark a card sold with sale price, date, platform, fees, and shipping.
+- **Sales** tab shows revenue, cost of cards sold, fees, **net profit, and ROI**,
+  plus a per-card profit list.
+
+**Set Checklists**
+- Create a set (e.g. "2023 Topps Chrome"), add cards or **import a CSV**
+  (`card_number, player, owned`), and tick off what you own.
+- Progress bars and completion % per set.
+
+**Other**
+- **CSV export** of the whole inventory (with sale/profit columns).
+- Works **fully free** — no API key required.
+
+### Optional: AI auto-fill (costs money, off by default)
+If you ever want higher-accuracy reading of cards, set `ANTHROPIC_API_KEY` in
+`.env` and the app can use Claude Vision via the `/api/cards/extract` endpoint.
+This is **not** used by the default UI and is not required.
+
+### Where your data lives
+Your inventory database and uploaded photos are stored in **`~/CardTrackerData`**
+(your home folder), so updating or re-downloading the app never wipes them.
+Override with the `CARD_DATA_DIR` environment variable.
 
 ## Run it
 
@@ -49,7 +71,7 @@ FastAPI + SQLAlchemy (SQLite) + the Anthropic SDK, with a vanilla-JS frontend.
 Data (SQLite db + uploaded images) lives in `cardtracker/data/` and is
 git-ignored.
 
-## Roadmap
+## Tech
 
-- **Phase 2** — Purchases & Sales ledgers with cost-basis allocation and profit/ROI.
-- **Phase 3** — Set checklists with owned/needed tracking and completion %.
+FastAPI + SQLAlchemy (SQLite) backend, vanilla-JS frontend. Free on-device OCR
+via Tesseract.js (loaded from a CDN; skipped gracefully when offline).
