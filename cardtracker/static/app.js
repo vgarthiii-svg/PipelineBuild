@@ -68,8 +68,11 @@ function applyBranding(name, logo) {
   if (logo) brand.innerHTML = `<img class="brand-logo" src="/images/${logo}" alt="" />` + esc(name);
   else brand.textContent = "🃏 " + name;
   document.title = name;
-  const fav = $("#favicon");
-  if (fav && logo) fav.href = "/images/" + logo;
+  const iconHref = logo ? "/images/" + logo : "/static/icon-180.png";
+  const fav = $("#favicon"); if (fav) fav.href = iconHref;
+  const apple = $("#apple-icon"); if (apple) apple.href = iconHref;
+  const title = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+  if (title) title.content = name;
 }
 $("#save-app-name").addEventListener("click", async () => {
   const name = $("#set-app-name").value.trim() || "Card Tracker";
