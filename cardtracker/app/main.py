@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.database import Base, engine, ensure_schema, IMAGE_DIR
 from app.models import *  # noqa: F401,F403 - register models
-from app.routers import cards, dashboard, checklists, suggest
+from app.routers import cards, dashboard, checklists, suggest, settings as settings_router
 
 app = FastAPI(title="Sports Card Tracker", version="1.0.0")
 
@@ -32,6 +32,7 @@ app.include_router(cards.router)
 app.include_router(dashboard.router)
 app.include_router(checklists.router)
 app.include_router(suggest.router)
+app.include_router(settings_router.router)
 
 # Serve uploaded card images
 app.mount("/images", StaticFiles(directory=IMAGE_DIR), name="images")

@@ -11,14 +11,74 @@ const money = (n) => "$" + Number(n || 0).toLocaleString(undefined, { minimumFra
 // ---------- Navigation ----------
 function showView(name) {
   $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === name));
-  ["inventory","add","sales","checklists"].forEach((v) =>
+  ["home","inventory","add","sales","checklists","settings"].forEach((v) =>
     $("#view-" + v).classList.toggle("hidden", v !== name));
+  if (name === "home") loadHome();
   if (name === "inventory") loadInventory();
   if (name === "add") resetAdd();
   if (name === "sales") loadSales();
   if (name === "checklists") loadChecklists();
+  if (name === "settings") loadSettings();
 }
 $$(".tab").forEach((t) => t.addEventListener("click", () => showView(t.dataset.view)));
+$("#settings-btn").addEventListener("click", () => showView("settings"));
+$$(".qa").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
+
+const SPORT_COLORS = { baseball: "#ef4444", basketball: "#f97316", football: "#64748b", hockey: "#38bdf8", soccer: "#22c55e" };
+function sportClass(s) { return "sport-" + String(s || "").toLowerCase().replace(/[^a-z]/g, ""); }
+
+// ---------- Home / Dashboard ----------
+async function loadHome() {
+  const d = await (await fetch("/api/dashboard")).json();
+  $("#home-tiles").innerHTML = `
+    <div class="tile big ${d.net_profit >= 0 ? "good" : "bad"}"><div class="num">${money(d.net_profit)}</div><div class="label">Net profit · ${d.roi}% ROI</div></div>
+    <div class="tile"><div class="num">${money(d.revenue)}</div><div class="label">Revenue</div></div>
+    <div class="tile"><div class="num">${money(d.total_spent)}</div><div class="label">Total spent</div></div>
+    <div class="tile"><div class="num">${d.total_cards}</div><div class="label">${d.by_status.in_stock + d.by_status.listed} in stock · ${d.by_status.sold} sold</div></div>`;
+  const rec = d.recent || [];
+  $("#recent-list").innerHTML = rec.length ? rec.map((r) => {
+    const val = r.status === "sold" ? money(r.sale_price) : (r.purchase_price != null ? money(r.purchase_price) : "");
+    return `<div class="recent-row" data-pk="${r.id}">
+      <span class="badge ${r.status}">${r.status.replace("_", " ")}</span>
+      <span class="rec-player">${esc(r.player) || r.card_id}</span>
+      <span class="rec-val">${val}</span></div>`;
+  }).join("") : '<p class="muted">No cards yet. Tap “Add card” to scan your first one.</p>';
+  $$("#recent-list .recent-row").forEach((el) => el.addEventListener("click", () => openEdit(Number(el.dataset.pk))));
+}
+
+// ---------- Settings ----------
+async function loadSettings() {
+  const s = await (await fetch("/api/settings")).json();
+  $("#set-app-name").value = s.app_name || "";
+}
+function applyAppName(name) {
+  $("#brand").textContent = "🃏 " + name;
+  document.title = name;
+}
+$("#save-app-name").addEventListener("click", async () => {
+  const name = $("#set-app-name").value.trim() || "Card Tracker";
+  await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ app_name: name }) });
+  applyAppName(name);
+  alert("Saved.");
+});
+$("#inv-import-input").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = "";
+  const fd = new FormData();
+  fd.append("file", file);
+  const r = await fetch("/api/cards/import", { method: "POST", body: fd });
+  const res = await r.json().catch(() => ({}));
+  if (r.ok) { alert(`Imported ${res.imported} cards.`); showView("inventory"); }
+  else alert(res.detail || "Import failed.");
+});
+$("#clear-cards").addEventListener("click", async () => {
+  if (!confirm("Delete ALL cards from your inventory? This can't be undone.")) return;
+  if (!confirm("Really sure? Export a CSV backup first if you're not certain.")) return;
+  await fetch("/api/settings/clear?scope=cards", { method: "POST" });
+  alert("All cards cleared.");
+  showView("home");
+});
 
 // ---------- Dashboard / Inventory ----------
 async function loadStats() {
@@ -47,12 +107,14 @@ async function loadInventory() {
 function cardTile(c) {
   const thumb = c.front_image ? `style="background-image:url('/images/${c.front_image}')"` : "";
   const sub = [c.year, c.brand, c.set_name].filter(Boolean).join(" ");
-  return `<div class="card" data-pk="${c.id}">
+  const sp = c.sport ? `<span class="sport-pill ${sportClass(c.sport)}">${esc(c.sport)}</span>` : "";
+  return `<div class="card ${sportClass(c.sport)}" data-pk="${c.id}">
     <div class="thumb" ${thumb}>${c.front_image ? "" : "no image"}</div>
     <div class="info">
       <div class="player">${esc(c.player) || "Unknown player"}</div>
       <div class="meta">${esc(sub) || "&nbsp;"}</div>
       <div class="row"><span class="invid">${esc(c.card_id)}</span><span class="badge ${c.status}">${c.status.replace("_"," ")}</span></div>
+      ${sp ? `<div class="tags">${sp}</div>` : ""}
     </div></div>`;
 }
 
@@ -276,9 +338,7 @@ function parseOcr(text) {
 
 $("#cancel-add").addEventListener("click", () => showView("inventory"));
 
-$("#review-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const f = e.target;
+async function saveNewCard(f) {
   const payload = { front_image: state.uploaded.front_image, back_image: state.uploaded.back_image };
   FIELDS.forEach((k) => { if (f.elements[k]) payload[k] = f.elements[k].value; });
   payload.status = f.elements["status"].value;
@@ -286,7 +346,15 @@ $("#review-form").addEventListener("submit", async (e) => {
   payload.purchase_source = f.elements["purchase_source"].value;
   payload.purchase_date = f.elements["purchase_date"].value;
   const r = await fetch("/api/cards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-  if (r.ok) showView("inventory"); else alert("Could not save card.");
+  return r.ok;
+}
+
+$("#review-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (await saveNewCard(e.target)) showView("inventory"); else alert("Could not save card.");
+});
+$("#save-add-another").addEventListener("click", async () => {
+  if (await saveNewCard($("#review-form"))) resetAdd(); else alert("Could not save card.");
 });
 
 // ---------- Edit modal ----------
@@ -704,4 +772,10 @@ function attachSuggest(input, field, form) {
   attachSuggest($("#new-set-form").elements[el], field, $("#new-set-form"));
 });
 
-loadInventory();
+(async function init() {
+  try {
+    const s = await (await fetch("/api/settings")).json();
+    applyAppName(s.app_name || "Card Tracker");
+  } catch { /* ignore */ }
+  showView("home");
+})();

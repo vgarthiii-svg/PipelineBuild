@@ -10,7 +10,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db, IMAGE_DIR
-from app.models import Card, VALID_STATUSES
+from app.models import Card, VALID_STATUSES, STATUS_IN_STOCK
 from app.schemas import CardCreate, CardOut, CardUpdate, ExtractResult, UploadResult
 from app.vision import extract_card
 
@@ -32,14 +32,79 @@ def _save_upload(upload: UploadFile) -> str:
     return name
 
 
-def _next_card_id(db: Session) -> str:
-    """Compute the next INV-#### id by scanning existing ids."""
+def _max_card_num(db: Session) -> int:
     max_n = 0
     for (cid,) in db.query(Card.card_id).all():
         m = re.match(r"INV-(\d+)", cid or "", re.IGNORECASE)
         if m:
             max_n = max(max_n, int(m.group(1)))
-    return f"INV-{max_n + 1:04d}"
+    return max_n
+
+
+def _next_card_id(db: Session) -> str:
+    """Compute the next INV-#### id by scanning existing ids."""
+    return f"INV-{_max_card_num(db) + 1:04d}"
+
+
+# CSV column header -> Card field, for inventory import (matches export.csv)
+_IMPORT_MAP = {
+    "player": "player", "year": "year", "brand": "brand",
+    "set": "set_name", "set name": "set_name", "set_name": "set_name",
+    "card #": "card_number", "card number": "card_number", "number": "card_number",
+    "card_number": "card_number", "#": "card_number",
+    "variation": "variation", "parallel": "variation",
+    "team": "team", "sport": "sport", "rookie": "is_rookie", "condition": "condition",
+    "status": "status", "purchase date": "purchase_date",
+    "purchase source": "purchase_source", "purchased from": "purchase_source",
+    "purchase price": "purchase_price", "cost": "purchase_price",
+    "sale date": "sale_date", "sale platform": "sale_platform", "sold on": "sale_platform",
+    "sale price": "sale_price", "sale fees": "sale_fees", "fees": "sale_fees",
+    "sale shipping": "sale_shipping", "shipping": "sale_shipping",
+    "est. value": "estimated_value", "estimated value": "estimated_value",
+    "notes": "notes", "front image": "front_image", "back image": "back_image",
+}
+_FLOAT_FIELDS = {"purchase_price", "sale_price", "sale_fees", "sale_shipping", "estimated_value"}
+
+
+@router.post("/import")
+def import_cards(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """Import inventory from a CSV (the same columns produced by export.csv)."""
+    text = file.file.read().decode("utf-8-sig", errors="replace")
+    rows = [r for r in csv.reader(io.StringIO(text)) if any(c.strip() for c in r)]
+    if not rows:
+        return {"imported": 0}
+    header = [h.strip().lower() for h in rows[0]]
+    cols = {i: _IMPORT_MAP[h] for i, h in enumerate(header) if h in _IMPORT_MAP}
+    if not cols:
+        raise HTTPException(status_code=400, detail="No recognizable columns found (need at least a Player column).")
+
+    n = _max_card_num(db)
+    count = 0
+    for row in rows[1:]:
+        data = {}
+        for i, field in cols.items():
+            if i >= len(row):
+                continue
+            val = row[i].strip()
+            if not val:
+                continue
+            if field in _FLOAT_FIELDS:
+                try:
+                    data[field] = float(val.replace(",", "").replace("$", ""))
+                except ValueError:
+                    pass
+            else:
+                data[field] = val
+        if not any(data.get(k) for k in ("player", "year", "brand", "set_name", "card_number")):
+            continue
+        status = (data.pop("status", "") or "").lower().replace(" ", "_")
+        if status not in VALID_STATUSES:
+            status = STATUS_IN_STOCK
+        n += 1
+        db.add(Card(card_id=f"INV-{n:04d}", status=status, **data))
+        count += 1
+    db.commit()
+    return {"imported": count}
 
 
 @router.post("/upload", response_model=UploadResult)

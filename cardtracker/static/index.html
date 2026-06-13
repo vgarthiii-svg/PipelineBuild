@@ -9,19 +9,32 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">🃏 Card Tracker</div>
+    <div class="brand" id="brand">🃏 Card Tracker</div>
     <nav class="tabs">
-      <button class="tab active" data-view="inventory">Inventory</button>
+      <button class="tab active" data-view="home">Home</button>
+      <button class="tab" data-view="inventory">Inventory</button>
       <button class="tab" data-view="add">+ Add</button>
       <button class="tab" data-view="sales">Sales</button>
       <button class="tab" data-view="checklists">Checklists</button>
     </nav>
+    <button id="settings-btn" class="icon-btn" title="Settings" aria-label="Settings">⚙️</button>
   </header>
 
   <main id="app">
+    <!-- HOME / DASHBOARD VIEW -->
+    <section id="view-home" class="view">
+      <div id="home-tiles" class="home-tiles"></div>
+      <div class="quick-actions">
+        <button class="qa" data-view="add">📷<span>Add card</span></button>
+        <button class="qa" data-view="sales">💰<span>View sales</span></button>
+        <button class="qa" data-view="checklists">🗂️<span>Checklists</span></button>
+      </div>
+      <h3 class="section-h">Recent activity</h3>
+      <div id="recent-list" class="recent-list"></div>
+    </section>
+
     <!-- INVENTORY VIEW -->
-    <section id="view-inventory" class="view">
-      <section id="stats" class="stats"></section>
+    <section id="view-inventory" class="view hidden">
       <div class="toolbar">
         <input id="search" type="search" placeholder="Search player, set, team, INV id…" />
         <select id="filter-status">
@@ -71,7 +84,15 @@
           <label>Rookie?
             <select name="is_rookie"><option value="">—</option><option value="yes">Yes</option><option value="no">No</option></select>
           </label>
-          <label>Condition<input name="condition" /></label>
+          <label>Condition
+            <select name="condition">
+              <option value="">—</option>
+              <option>Mint</option><option>Near Mint</option><option>Excellent</option>
+              <option>Good</option><option>Fair</option><option>Poor</option>
+              <option>PSA 10</option><option>PSA 9</option><option>BGS 9.5</option>
+              <option>SGC 10</option><option>Graded (see notes)</option>
+            </select>
+          </label>
           <label>Status
             <select name="status"><option value="in_stock">In stock</option><option value="listed">Listed</option><option value="sold">Sold</option></select>
           </label>
@@ -82,9 +103,34 @@
         <label class="full">Notes<textarea name="notes" rows="2"></textarea></label>
         <div class="form-actions">
           <button type="button" id="cancel-add" class="btn btn-ghost">Cancel</button>
+          <button type="button" id="save-add-another" class="btn btn-ghost">Save &amp; add another</button>
           <button type="submit" class="btn btn-primary">Save to inventory</button>
         </div>
       </form>
+    </section>
+
+    <!-- SETTINGS VIEW -->
+    <section id="view-settings" class="view hidden">
+      <h2 class="view-title">Settings</h2>
+      <div class="settings-card">
+        <label>App name<input id="set-app-name" placeholder="Card Tracker" /></label>
+        <button id="save-app-name" class="btn btn-primary">Save name</button>
+      </div>
+      <div class="settings-card">
+        <h3>Data</h3>
+        <div class="settings-row">
+          <a class="btn btn-ghost" href="/api/cards/export.csv">⬇ Export inventory (CSV)</a>
+          <label class="btn btn-ghost" id="inv-import-label">⬆ Import inventory (CSV)
+            <input type="file" accept=".csv" id="inv-import-input" hidden />
+          </label>
+        </div>
+        <p class="muted">Import expects the same columns as the export (Player, Year, Brand, Set, Status, Purchase Price, Sale Price…).</p>
+        <button id="clear-cards" class="btn btn-danger">🗑 Clear all cards…</button>
+      </div>
+      <div class="settings-card">
+        <h3>About</h3>
+        <p class="muted">Sports Card Tracker — free &amp; self-hosted. <span id="about-version"></span></p>
+      </div>
     </section>
 
     <!-- SALES VIEW -->
@@ -129,7 +175,15 @@
           <label>Variation<input name="variation" /></label>
           <label>Team<input name="team" /></label>
           <label>Sport<input name="sport" /></label>
-          <label>Condition<input name="condition" /></label>
+          <label>Condition
+            <select name="condition">
+              <option value="">—</option>
+              <option>Mint</option><option>Near Mint</option><option>Excellent</option>
+              <option>Good</option><option>Fair</option><option>Poor</option>
+              <option>PSA 10</option><option>PSA 9</option><option>BGS 9.5</option>
+              <option>SGC 10</option><option>Graded (see notes)</option>
+            </select>
+          </label>
           <label>Status
             <select name="status"><option value="in_stock">In stock</option><option value="listed">Listed</option><option value="sold">Sold</option></select>
           </label>

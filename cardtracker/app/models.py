@@ -99,3 +99,12 @@ class ChecklistItem(Base):
     variation = Column(String, default="")
     owned = Column(Boolean, default=False)
     notes = Column(String, default="")
+
+
+class Setting(Base):
+    """Simple key/value app settings (e.g. app_name)."""
+
+    __tablename__ = "settings"
+
+    key = Column(String, primary_key=True)
+    value = Column(Text, default="")
