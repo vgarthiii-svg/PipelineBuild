@@ -53,12 +53,15 @@ echo "  On your phone: open http://<this-computer-ip>:8001 to scan cards with th
 echo "  Press Ctrl+C to stop."
 echo ""
 
-# Auto-open the app in the default browser a moment after the server starts
+# Auto-open the app in the default browser a moment after the server starts.
+# Skipped when run as a background service (CARD_NO_BROWSER=1).
+if [ "${CARD_NO_BROWSER:-0}" != "1" ]; then
 ( sleep 2
   if command -v open >/dev/null 2>&1; then open "$URL"          # macOS
   elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$URL" # Linux
   elif command -v powershell.exe >/dev/null 2>&1; then powershell.exe -c "start $URL"  # Windows (WSL/Git Bash)
   fi
 ) >/dev/null 2>&1 &
+fi
 
 exec "$VENV_PY" -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8001

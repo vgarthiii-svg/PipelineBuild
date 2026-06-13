@@ -50,6 +50,18 @@ In Safari with the app open: tap the **Share** button (the square with the up‑
 
 ---
 
+## Make the app start by itself (recommended)
+So you never have to remember to launch it, turn on auto-start once:
+1. In your `CardTracker` folder, **double-click `Turn-on-AutoStart.command`**.
+   (First time, macOS may say it's from an unidentified developer → **right‑click → Open → Open**.)
+2. That's it — Card Tracker now launches automatically when the Mac logs in and
+   **restarts itself if it ever stops**.
+
+After this:
+- **Updates:** double-click **`CardTracker`** as usual — it pulls the update and
+  restarts the background app (no second copy, no port clash).
+- **Turn it off:** double-click **`Turn-off-AutoStart.command`** (your data is untouched).
+
 ## Keep the Mac awake (so the phones can always reach it)
 The phones can only reach the app while the Mac is on and not asleep.
 - **System Settings → Lock Screen / Battery →** set **"Turn display off…"** to a longer
