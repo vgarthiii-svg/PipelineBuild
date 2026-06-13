@@ -1,12 +1,24 @@
 #!/bin/bash
-# Sports Card Tracker — double-click this file to update and launch the app.
-# (Created for a git clone; "git pull" grabs the latest changes each time.)
+# Sports Card Tracker — double-click to update and launch the app.
+# Works from anywhere (Dock, Desktop) because it points at the install folder.
 
-cd "$(dirname "$0")" || exit 1
+REPO="$HOME/CardTracker"
+
+if [ ! -d "$REPO/cardtracker" ]; then
+  echo "Card Tracker is not installed on this Mac yet (looked in $REPO)."
+  echo "Ask Claude to walk you through the one-time install on this computer,"
+  echo "then use this shortcut again."
+  echo ""
+  echo "Press Return to close."
+  read -r _
+  exit 1
+fi
+
+cd "$REPO" || exit 1
 
 echo "=== Sports Card Tracker ==="
 echo "Checking for updates..."
-git pull --ff-only || echo "(Couldn't check for updates right now — launching the current version.)"
+git pull --ff-only 2>/dev/null || echo "(Couldn't check for updates right now — launching the current version.)"
 echo ""
 
 exec bash cardtracker/run.sh
