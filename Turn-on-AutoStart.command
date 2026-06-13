@@ -4,7 +4,7 @@
 
 set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"          # repo root (folder this file is in)
-RUN_SH="$DIR/cardtracker/run.sh"
+RUN_SH="$DIR/cardtracker/service-start.sh"    # pulls latest, then launches
 WORKDIR="$DIR/cardtracker"
 LABEL="com.cardtracker"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"

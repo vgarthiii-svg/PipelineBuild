@@ -58,8 +58,9 @@ So you never have to remember to launch it, turn on auto-start once:
    **restarts itself if it ever stops**.
 
 After this:
-- **Updates:** double-click **`CardTracker`** as usual — it pulls the update and
-  restarts the background app (no second copy, no port clash).
+- **Updates are automatic:** every time it starts (each login/restart) it checks for
+  and applies the latest version. To grab an update right now without waiting, just
+  double-click **`CardTracker`** — it pulls and restarts the background app.
 - **Turn it off:** double-click **`Turn-off-AutoStart.command`** (your data is untouched).
 
 ## Keep the Mac awake (so the phones can always reach it)
