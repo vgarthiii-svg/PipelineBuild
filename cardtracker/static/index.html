@@ -178,6 +178,23 @@
     </div>
   </div>
 
+  <!-- Floating voice command button -->
+  <button id="voice-fab" class="fab" title="Voice command" aria-label="Voice command">🎤</button>
+
+  <!-- Voice command modal -->
+  <div id="voice-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>🎤 Voice command</h2>
+        <button type="button" id="voice-close" class="btn btn-ghost">Close</button>
+      </div>
+      <button type="button" id="voice-mic" class="mic-btn">🎤<br /><small>Tap, then speak</small></button>
+      <p id="voice-transcript" class="voice-transcript"></p>
+      <div id="voice-result"></div>
+      <p class="muted voice-hint">Try: “add a 2021 Topps Chrome Mike Trout baseball rookie” · “mark INV 5 sold for 200” · “list INV 12”.</p>
+    </div>
+  </div>
+
   <!-- Webcam capture modal (laptop/desktop) -->
   <div id="camera-modal" class="modal hidden">
     <div class="modal-card cam">

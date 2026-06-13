@@ -457,4 +457,159 @@ function esc(s) { return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp
 function numOrNull(v) { const n = parseFloat(v); return Number.isFinite(n) ? n : null; }
 function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 
+// ---------- Voice commands (free, browser Web Speech API) ----------
+const SPORTS = ["Baseball", "Basketball", "Football", "Hockey", "Soccer"];
+
+function openVoice() {
+  $("#voice-transcript").textContent = "";
+  $("#voice-result").innerHTML = "";
+  $("#voice-mic").classList.remove("listening");
+  $("#voice-modal").classList.remove("hidden");
+}
+function closeVoice() {
+  try { if (voice.rec) voice.rec.stop(); } catch {}
+  $("#voice-modal").classList.add("hidden");
+}
+
+const voice = { rec: null };
+
+function startListening() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    $("#voice-result").innerHTML = '<p class="muted">Voice input isn\'t supported in this browser. Use Chrome or Safari on your laptop.</p>';
+    return;
+  }
+  const rec = new SR();
+  voice.rec = rec;
+  rec.lang = "en-US";
+  rec.interimResults = true;
+  rec.maxAlternatives = 1;
+  rec.continuous = false;
+  let finalText = "";
+  $("#voice-result").innerHTML = "";
+  $("#voice-transcript").textContent = "Listening…";
+  $("#voice-mic").classList.add("listening");
+
+  rec.onresult = (e) => {
+    let txt = "";
+    for (const r of e.results) txt += r[0].transcript;
+    $("#voice-transcript").textContent = txt;
+    if (e.results[e.results.length - 1].isFinal) finalText = txt;
+  };
+  rec.onerror = (e) => {
+    $("#voice-mic").classList.remove("listening");
+    const msg = (e.error === "not-allowed" || e.error === "service-not-allowed")
+      ? "Microphone blocked. On the laptop, allow mic access. (Voice needs a secure connection, so it works on the laptop at localhost but not over the phone's web address yet.)"
+      : "Didn't catch that — tap the mic and try again.";
+    $("#voice-transcript").textContent = "";
+    $("#voice-result").innerHTML = `<p class="muted">${msg}</p>`;
+  };
+  rec.onend = () => {
+    $("#voice-mic").classList.remove("listening");
+    if (finalText) handleVoice(finalText);
+  };
+  try { rec.start(); } catch {
+    $("#voice-result").innerHTML = '<p class="muted">Could not start the microphone. Use Chrome or Safari on your laptop.</p>';
+  }
+}
+
+function parseInvId(low) {
+  let m = low.match(/inv[\s-]*0*(\d{1,5})/);
+  if (m) return "INV-" + String(m[1]).padStart(4, "0");
+  m = low.match(/\b(?:number|card|id)\s+0*(\d{1,5})\b/);
+  if (m) return "INV-" + String(m[1]).padStart(4, "0");
+  return "";
+}
+
+function extractFieldsFromSpeech(t) {
+  const fields = {};
+  const low = " " + t.toLowerCase() + " ";
+  const yr = t.match(/\b(20\d{2})[-/](\d{2})\b/) || t.match(/\b(19|20)\d{2}\b/);
+  if (yr) fields.year = yr[0];
+  for (const b of BRANDS) if (low.includes(" " + b.toLowerCase() + " ")) { fields.brand = b; break; }
+  for (const s of SETS) if (low.includes(" " + s.toLowerCase() + " ")) { fields.set_name = s; break; }
+  for (const sp of SPORTS) if (low.includes(" " + sp.toLowerCase() + " ")) { fields.sport = sp; break; }
+  outer:
+  for (const [sp, teams] of Object.entries(TEAMS)) {
+    for (const tm of teams) {
+      if (low.includes(" " + tm.toLowerCase() + " ")) { fields.team = tm; if (!fields.sport) fields.sport = sp; break outer; }
+    }
+  }
+  if (/\brookie\b|\brc\b/.test(low)) fields.is_rookie = "yes";
+  const num = t.match(/(?:number|no\.?|#)\s*([A-Za-z]{0,4}-?\d{1,4})/i);
+  if (num && /\d/.test(num[1])) fields.card_number = num[1].toUpperCase();
+
+  // Player = leftover words once known keywords/numbers are removed
+  let rest = " " + t + " ";
+  rest = rest.replace(/\b(19|20)\d{2}(?:[-/]\d{2})?\b/g, " ").replace(/#/g, " ").replace(/\b\d+\b/g, " ");
+  const remove = [...BRANDS, ...SETS, ...SPORTS, fields.team || "",
+    "add", "new", "log", "create", "enter", "card", "rookie", "rc", "number", "season", "of", "a", "an", "the"];
+  remove.forEach((w) => { if (w) rest = rest.replace(new RegExp("\\b" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "ig"), " "); });
+  rest = rest.replace(/\s+/g, " ").trim();
+  if (rest) fields.player = rest.split(" ").slice(0, 3).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+  return fields;
+}
+
+function parseVoiceCommand(t) {
+  const low = t.toLowerCase();
+  if (/\bsold\b|\bsell\b/.test(low)) {
+    const pm = low.match(/(?:for|at)\s*\$?\s*([\d,]+(?:\.\d{1,2})?)/) || low.match(/\$\s*([\d,]+(?:\.\d{1,2})?)/);
+    const price = pm ? parseFloat(pm[1].replace(/,/g, "")) : null;
+    let key = parseInvId(low);
+    if (!key) key = low.replace(/.*\b(?:mark|sell|sold)\b/, "").replace(/\bsold\b.*/, "").replace(/\bfor\b.*/, "").trim();
+    return { intent: "sale", key, price, raw: t };
+  }
+  if (/\blist(ed|ing)?\b/.test(low) && !/^\s*(add|new|log|create|enter)\b/.test(low)) {
+    let key = parseInvId(low);
+    if (!key) key = low.replace(/.*\b(?:mark|list|listed)\b/, "").replace(/\blisted?\b.*/, "").trim();
+    return { intent: "list", key, raw: t };
+  }
+  if (/^\s*(add|new|log|create|enter)\b/.test(low) || /\bcard\b/.test(low)) {
+    return { intent: "add", fields: extractFieldsFromSpeech(t), raw: t };
+  }
+  return { intent: "unknown", raw: t };
+}
+
+async function handleVoice(text) {
+  const cmd = parseVoiceCommand(text);
+  const box = $("#voice-result");
+  if (cmd.intent === "add") {
+    const sum = ["year", "brand", "set_name", "player", "sport", "card_number"].map((k) => cmd.fields[k]).filter(Boolean).join(" ");
+    box.innerHTML = `<div class="voice-card"><b>Add a card</b><div class="vc-sum">${esc(sum || "(no details caught — you can fill them in)")}</div><button id="v-add" class="btn btn-primary">Review &amp; save →</button></div>`;
+    $("#v-add").onclick = () => { closeVoice(); showAddReview(cmd.fields); };
+  } else if (cmd.intent === "sale" || cmd.intent === "list") {
+    if (!cmd.key) { box.innerHTML = '<p class="muted">Tell me which card, e.g. “mark INV 5 sold for 200”.</p>'; return; }
+    const cards = await (await fetch("/api/cards?q=" + encodeURIComponent(cmd.key))).json();
+    if (!cards.length) { box.innerHTML = `<p class="muted">Couldn't find a card matching “${esc(cmd.key)}”.</p>`; return; }
+    const c = cards[0];
+    const action = cmd.intent === "sale"
+      ? `Mark <b>${esc(c.card_id)} ${esc(c.player || "")}</b> as <b>SOLD</b>${cmd.price ? " for " + money(cmd.price) : ""}?`
+      : `Mark <b>${esc(c.card_id)} ${esc(c.player || "")}</b> as <b>LISTED</b>?`;
+    box.innerHTML = `<div class="voice-card"><div>${action}</div><button id="v-confirm" class="btn btn-primary">Confirm</button></div>`;
+    $("#v-confirm").onclick = async () => {
+      const payload = cmd.intent === "sale" ? { status: "sold", sale_price: cmd.price ?? null } : { status: "listed" };
+      await fetch("/api/cards/" + c.id, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      closeVoice();
+      loadInventory();
+    };
+  } else {
+    box.innerHTML = '<p class="muted">Didn\'t catch a command. Try “add a 2021 Topps Mike Trout baseball” or “mark INV 5 sold for 200”.</p>';
+  }
+}
+
+function showAddReview(fields) {
+  showView("add");
+  state.uploaded = { front_image: "", back_image: "" };
+  const f = $("#review-form");
+  f.reset();
+  Object.entries(fields).forEach(([k, v]) => { if (f.elements[k] && v) f.elements[k].value = v; });
+  $("#vision-note").textContent = "🎤 From your voice command — check the details and Save.";
+  $("#capture-step").classList.add("hidden");
+  $("#review-form").classList.remove("hidden");
+}
+
+$("#voice-fab").addEventListener("click", openVoice);
+$("#voice-close").addEventListener("click", closeVoice);
+$("#voice-mic").addEventListener("click", startListening);
+
 loadInventory();
