@@ -642,4 +642,66 @@ $("#voice-fab").addEventListener("click", openVoice);
 $("#voice-close").addEventListener("click", closeVoice);
 $("#voice-mic").addEventListener("click", startListening);
 
+// ---------- Autocomplete / suggestions ----------
+function attachSuggest(input, field, form) {
+  if (!input) return;
+  const label = input.parentElement;
+  label.style.position = "relative";
+  const box = document.createElement("div");
+  box.className = "suggest-box hidden";
+  label.appendChild(box);
+  let items = [];
+
+  const close = () => { items = []; box.classList.add("hidden"); box.innerHTML = ""; };
+
+  const pick = (it) => {
+    input.value = it.value;
+    if (it.fill) {
+      Object.entries(it.fill).forEach(([k, v]) => {
+        const el = form.elements[k];
+        if (el && v && !el.value) el.value = v;
+      });
+    }
+    close();
+  };
+
+  const render = () => {
+    if (!items.length) return close();
+    box.innerHTML = items.map((it, i) => {
+      const sub = field === "player" && it.fill
+        ? [it.fill.year, it.fill.brand, it.fill.set_name].filter(Boolean).join(" ")
+        : (it.fill && it.fill.sport) ? it.fill.sport : "";
+      return `<div class="suggest-item" data-i="${i}">${esc(it.value)}${sub ? `<span class="sg-sub">${esc(sub)}</span>` : ""}</div>`;
+    }).join("");
+    box.classList.remove("hidden");
+    box.querySelectorAll(".suggest-item").forEach((el) =>
+      el.addEventListener("mousedown", (e) => { e.preventDefault(); pick(items[Number(el.dataset.i)]); }));
+  };
+
+  const run = debounce(async () => {
+    const q = input.value.trim();
+    if (q.length < 2) return close();
+    const params = new URLSearchParams({ field, q });
+    if (field === "card_number") {
+      if (form.elements["player"]) params.set("player", form.elements["player"].value);
+      if (form.elements["set_name"]) params.set("set_name", form.elements["set_name"].value);
+    }
+    try { items = await (await fetch("/api/suggest?" + params)).json(); render(); } catch { close(); }
+  }, 160);
+
+  input.addEventListener("input", run);
+  input.addEventListener("blur", () => setTimeout(close, 150));
+  input.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+}
+
+// Wire type-ahead onto the card add/edit forms and the checklist detail forms
+["player", "team", "brand", "set_name", "year", "card_number"].forEach((name) => {
+  attachSuggest($("#review-form").elements[name], name, $("#review-form"));
+  attachSuggest($("#edit-form").elements[name], name, $("#edit-form"));
+});
+[["name", "set_name"], ["brand", "brand"], ["year", "year"]].forEach(([el, field]) => {
+  attachSuggest($("#cl-edit-form").elements[el], field, $("#cl-edit-form"));
+  attachSuggest($("#new-set-form").elements[el], field, $("#new-set-form"));
+});
+
 loadInventory();

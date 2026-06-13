@@ -226,6 +226,21 @@ input, select, textarea {
 .cl-del { background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: 13px; }
 .cl-del:hover { color: #f87171; }
 
+/* Autocomplete suggestions */
+.suggest-box {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 60;
+  background: var(--panel-2); border: 1px solid var(--accent);
+  border-radius: 8px; margin-top: 2px; max-height: 220px; overflow-y: auto;
+  box-shadow: 0 8px 20px rgba(0,0,0,.45);
+}
+.suggest-item {
+  padding: 9px 11px; font-size: 14px; color: var(--text); cursor: pointer;
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+}
+.suggest-item:hover { background: var(--accent); color: #04283b; }
+.suggest-item .sg-sub { font-size: 11px; color: var(--muted); }
+.suggest-item:hover .sg-sub { color: #04283b; }
+
 /* Voice command */
 .fab {
   position: fixed; right: 18px; bottom: 18px; z-index: 40;
