@@ -3,7 +3,7 @@
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 
-const state = { front: null, back: null, uploaded: null, editingPk: null, checklistId: null };
+const state = { front: null, back: null, uploaded: null, editingPk: null, checklistId: null, logo: "" };
 
 const FIELDS = ["player","year","brand","set_name","card_number","variation","team","sport","is_rookie","condition","notes"];
 const money = (n) => "$" + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -50,16 +50,51 @@ async function loadHome() {
 async function loadSettings() {
   const s = await (await fetch("/api/settings")).json();
   $("#set-app-name").value = s.app_name || "";
+  state.logo = s.logo_image || "";
+  renderLogoPreview();
 }
-function applyAppName(name) {
-  $("#brand").textContent = "🃏 " + name;
+function renderLogoPreview() {
+  const p = $("#logo-preview");
+  if (state.logo) {
+    p.innerHTML = `<img class="logo-prev" src="/images/${state.logo}" alt="logo" />`;
+    $("#remove-logo").classList.remove("hidden");
+  } else {
+    p.innerHTML = "";
+    $("#remove-logo").classList.add("hidden");
+  }
+}
+function applyBranding(name, logo) {
+  const brand = $("#brand");
+  if (logo) brand.innerHTML = `<img class="brand-logo" src="/images/${logo}" alt="" />` + esc(name);
+  else brand.textContent = "🃏 " + name;
   document.title = name;
+  const fav = $("#favicon");
+  if (fav && logo) fav.href = "/images/" + logo;
 }
 $("#save-app-name").addEventListener("click", async () => {
   const name = $("#set-app-name").value.trim() || "Card Tracker";
   await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ app_name: name }) });
-  applyAppName(name);
+  applyBranding(name, state.logo);
   alert("Saved.");
+});
+$("#logo-input").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = "";
+  const fd = new FormData();
+  fd.append("file", file);
+  const r = await fetch("/api/settings/logo", { method: "POST", body: fd });
+  if (r.ok) {
+    state.logo = (await r.json()).logo_image;
+    renderLogoPreview();
+    applyBranding($("#set-app-name").value.trim() || "Card Tracker", state.logo);
+  } else alert("Could not upload the logo.");
+});
+$("#remove-logo").addEventListener("click", async () => {
+  await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ logo_image: "" }) });
+  state.logo = "";
+  renderLogoPreview();
+  applyBranding($("#set-app-name").value.trim() || "Card Tracker", "");
 });
 $("#inv-import-input").addEventListener("change", async (e) => {
   const file = e.target.files[0];
@@ -775,7 +810,8 @@ function attachSuggest(input, field, form) {
 (async function init() {
   try {
     const s = await (await fetch("/api/settings")).json();
-    applyAppName(s.app_name || "Card Tracker");
+    state.logo = s.logo_image || "";
+    applyBranding(s.app_name || "Card Tracker", state.logo);
   } catch { /* ignore */ }
   showView("home");
 })();

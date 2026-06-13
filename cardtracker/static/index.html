@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
   <meta name="theme-color" content="#0f172a" />
   <title>Sports Card Tracker</title>
+  <link rel="icon" id="favicon" href="data:," />
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
@@ -115,6 +116,17 @@
       <div class="settings-card">
         <label>App name<input id="set-app-name" placeholder="Card Tracker" /></label>
         <button id="save-app-name" class="btn btn-primary">Save name</button>
+      </div>
+      <div class="settings-card">
+        <h3>Logo</h3>
+        <div id="logo-preview"></div>
+        <div class="settings-row">
+          <label class="btn btn-ghost" id="logo-upload-label">⬆ Upload logo
+            <input type="file" accept="image/*" id="logo-input" hidden />
+          </label>
+          <button id="remove-logo" class="btn btn-ghost hidden">Remove logo</button>
+        </div>
+        <p class="muted">Shown in the top bar and as the browser tab icon. A square image works best.</p>
       </div>
       <div class="settings-card">
         <h3>Data</h3>

@@ -31,7 +31,9 @@ body {
   background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
-.brand { font-weight: 700; font-size: 18px; }
+.brand { font-weight: 700; font-size: 18px; display: flex; align-items: center; gap: 8px; }
+.brand-logo { height: 26px; width: 26px; object-fit: contain; border-radius: 6px; }
+.logo-prev { height: 64px; max-width: 180px; object-fit: contain; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); padding: 4px; margin-bottom: 10px; display: block; }
 .tabs { display: flex; gap: 8px; }
 .tab {
   background: transparent;
