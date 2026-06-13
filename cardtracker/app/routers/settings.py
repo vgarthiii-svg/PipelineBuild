@@ -1,3 +1,5 @@
+from typing import Optional
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -11,7 +13,7 @@ DEFAULTS = {"app_name": "Card Tracker"}
 
 
 class SettingsIn(BaseModel):
-    app_name: str | None = None
+    app_name: Optional[str] = None
 
 
 @router.get("")
