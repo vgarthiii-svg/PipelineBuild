@@ -69,7 +69,9 @@ The phones can only reach the app while the Mac is on and not asleep.
   **Settings → Export inventory (CSV)** now and then for a backup, and make sure that Mac
   is included in Time Machine.
 - **Want a password too?** You don't strictly need one on Tailscale (only your devices can
-  connect), but I can add a simple shared password as extra protection — just ask.
+  connect), but there's an optional second layer built in: **Settings → Security → Shared
+  password**. Set one and everyone gets a sign-in screen the first time (then it remembers
+  them). Leave it blank to keep it off. Give the same password to Jake.
 
 ## Troubleshooting
 - **"Safari can't open the page."** Check: (a) Tailscale toggle is **On** on the phone,

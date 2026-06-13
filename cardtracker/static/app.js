@@ -52,7 +52,21 @@ async function loadSettings() {
   $("#set-app-name").value = s.app_name || "";
   state.logo = s.logo_image || "";
   renderLogoPreview();
+  $("#set-password").value = "";
+  $("#pw-status").textContent = s.has_password ? "🔒 Password is ON — required to open the app." : "🔓 No password set.";
+  $("#logout-btn").classList.toggle("hidden", !s.has_password);
 }
+$("#save-password").addEventListener("click", async () => {
+  const pw = $("#set-password").value;
+  const r = await fetch("/api/settings/password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: pw }) });
+  const res = await r.json().catch(() => ({}));
+  alert(res.has_password ? "Password is now ON." : "Password turned off.");
+  loadSettings();
+});
+$("#logout-btn").addEventListener("click", async () => {
+  await fetch("/api/logout", { method: "POST" });
+  location.href = "/login";
+});
 function renderLogoPreview() {
   const p = $("#logo-preview");
   if (state.logo) {

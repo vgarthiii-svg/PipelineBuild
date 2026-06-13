@@ -147,6 +147,16 @@
         <button id="clear-cards" class="btn btn-danger">🗑 Clear all cards…</button>
       </div>
       <div class="settings-card">
+        <h3>Security</h3>
+        <p class="muted" id="pw-status"></p>
+        <label>Shared password<input id="set-password" type="password" placeholder="Leave blank to turn off" autocomplete="new-password" /></label>
+        <div class="settings-row">
+          <button id="save-password" class="btn btn-primary">Save password</button>
+          <button id="logout-btn" class="btn btn-ghost">Log out</button>
+        </div>
+        <p class="muted">When set, everyone must enter this password to open the app. Optional second layer on top of Tailscale.</p>
+      </div>
+      <div class="settings-card">
         <h3>About</h3>
         <p class="muted">Sports Card Tracker — free &amp; self-hosted. <span id="about-version"></span></p>
       </div>

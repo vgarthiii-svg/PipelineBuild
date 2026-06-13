@@ -3,11 +3,13 @@ import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db, IMAGE_DIR
 from app.models import Setting, Card, ChecklistSet, ChecklistItem
+from app.auth import COOKIE, COOKIE_MAX_AGE, hash_password
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -18,6 +20,10 @@ _LOGO_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg"}
 class SettingsIn(BaseModel):
     app_name: Optional[str] = None
     logo_image: Optional[str] = None
+
+
+class PasswordIn(BaseModel):
+    password: Optional[str] = None
 
 
 def _set(db: Session, key: str, value: str):
@@ -33,7 +39,28 @@ def get_settings(db: Session = Depends(get_db)):
     values = dict(DEFAULTS)
     for s in db.query(Setting).all():
         values[s.key] = s.value
+    values["has_password"] = bool(values.pop("password_hash", ""))  # never expose the hash
     return values
+
+
+@router.post("/password")
+def set_password(payload: PasswordIn, db: Session = Depends(get_db)):
+    """Set the shared password, or turn it off when blank. Keeps the caller logged in."""
+    pw = (payload.password or "").strip()
+    row = db.get(Setting, "password_hash")
+    if not pw:
+        if row:
+            db.delete(row)
+        db.commit()
+        resp = JSONResponse({"ok": True, "has_password": False})
+        resp.delete_cookie(COOKIE)
+        return resp
+    h = hash_password(pw)
+    _set(db, "password_hash", h)
+    db.commit()
+    resp = JSONResponse({"ok": True, "has_password": True})
+    resp.set_cookie(COOKIE, h, max_age=COOKIE_MAX_AGE, httponly=True, samesite="lax")
+    return resp
 
 
 @router.post("/logo")
