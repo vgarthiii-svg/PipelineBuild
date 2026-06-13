@@ -99,12 +99,17 @@
     <section id="view-checklists" class="view hidden">
       <h2 class="view-title">Set Checklists</h2>
       <form id="new-set-form" class="inline-form">
-        <input name="name" placeholder="Set (e.g. Chrome)" required />
+        <input name="name" placeholder="Set (e.g. Chrome)" />
         <input name="year" placeholder="Year" />
         <input name="brand" placeholder="Brand" />
         <input name="sport" placeholder="Sport" />
         <button type="submit" class="btn btn-primary">+ New checklist</button>
       </form>
+      <p class="muted" style="margin:0 0 12px">…or skip the details and import a list straight from a file:</p>
+      <label class="btn btn-ghost" id="cl-import-label" style="margin-bottom:14px">
+        ⬆ Import checklist (CSV or Excel)
+        <input type="file" accept=".csv,.xlsx" id="cl-import-input" hidden />
+      </label>
       <div id="set-list" class="set-list"></div>
       <p id="empty-sets" class="empty hidden">No checklists yet. Create one above, then add cards or import a CSV.</p>
     </section>
@@ -161,10 +166,17 @@
         <button type="button" id="close-checklist" class="btn btn-ghost">Close</button>
       </div>
       <div id="checklist-progress" class="progress-wrap"></div>
+      <form id="cl-edit-form" class="inline-form">
+        <input name="name" placeholder="Set name" />
+        <input name="year" placeholder="Year" style="max-width:80px" />
+        <input name="brand" placeholder="Brand" />
+        <input name="sport" placeholder="Sport" />
+        <button type="submit" class="btn btn-ghost">Save details</button>
+      </form>
       <div class="checklist-actions">
         <label class="btn btn-ghost" id="import-label">
-          ⬆ Import CSV
-          <input type="file" accept=".csv,text/csv" id="import-input" hidden />
+          ⬆ Import CSV / Excel
+          <input type="file" accept=".csv,.xlsx" id="import-input" hidden />
         </label>
         <button type="button" id="delete-set" class="btn btn-danger">Delete checklist</button>
       </div>

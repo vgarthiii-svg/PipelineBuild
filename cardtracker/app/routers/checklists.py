@@ -8,10 +8,26 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import ChecklistSet, ChecklistItem
 from app.schemas import (
-    ChecklistSetCreate, ChecklistSetOut, ChecklistItemIn, ChecklistItemOut,
+    ChecklistSetCreate, ChecklistSetOut, ChecklistSetUpdate, ChecklistItemIn, ChecklistItemOut,
 )
 
 router = APIRouter(prefix="/api/checklists", tags=["checklists"])
+
+
+def _rows_from_xlsx(raw: bytes) -> list:
+    """Read the first sheet of an .xlsx file into a list of string-cell rows."""
+    import io as _io
+    from openpyxl import load_workbook
+
+    wb = load_workbook(_io.BytesIO(raw), read_only=True, data_only=True)
+    ws = wb.active
+    rows = []
+    for row in ws.iter_rows(values_only=True):
+        cells = ["" if c is None else str(c).strip() for c in row]
+        if any(cells):
+            rows.append(cells)
+    wb.close()
+    return rows
 
 
 def _set_summary(db: Session, s: ChecklistSet) -> dict:
@@ -32,8 +48,23 @@ def _set_summary(db: Session, s: ChecklistSet) -> dict:
 
 @router.post("", response_model=ChecklistSetOut)
 def create_set(payload: ChecklistSetCreate, db: Session = Depends(get_db)):
-    s = ChecklistSet(**payload.model_dump())
+    data = payload.model_dump()
+    if not (data.get("name") or "").strip():
+        data["name"] = "Untitled checklist"
+    s = ChecklistSet(**data)
     db.add(s)
+    db.commit()
+    db.refresh(s)
+    return _set_summary(db, s)
+
+
+@router.put("/{set_id}", response_model=ChecklistSetOut)
+def update_set(set_id: int, payload: ChecklistSetUpdate, db: Session = Depends(get_db)):
+    s = db.get(ChecklistSet, set_id)
+    if not s:
+        raise HTTPException(status_code=404, detail="Checklist not found")
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(s, key, value)
     db.commit()
     db.refresh(s)
     return _set_summary(db, s)
@@ -94,9 +125,21 @@ def import_items(set_id: int, file: UploadFile = File(...), db: Session = Depend
     if not db.get(ChecklistSet, set_id):
         raise HTTPException(status_code=404, detail="Checklist not found")
 
-    raw = file.file.read().decode("utf-8-sig", errors="replace")
-    reader = csv.reader(io.StringIO(raw))
-    rows = [r for r in reader if any(cell.strip() for cell in r)]
+    raw = file.file.read()
+    name = (file.filename or "").lower()
+    if name.endswith(".xlsx"):
+        try:
+            rows = _rows_from_xlsx(raw)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=f"Could not read the Excel file: {exc}")
+    elif name.endswith(".xls"):
+        raise HTTPException(
+            status_code=400,
+            detail="Old .xls files aren't supported — open it in Excel/Numbers and 'Save As' .xlsx or .csv.",
+        )
+    else:
+        text = raw.decode("utf-8-sig", errors="replace")
+        rows = [r for r in csv.reader(io.StringIO(text)) if any(c.strip() for c in r)]
     if not rows:
         return {"imported": 0}
 

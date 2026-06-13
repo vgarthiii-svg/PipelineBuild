@@ -93,11 +93,19 @@ class ExtractResult(BaseModel):
 # ---------- Checklists ----------
 
 class ChecklistSetCreate(_StrSafe):
-    name: str
+    name: str = ""
     year: str = ""
     brand: str = ""
     sport: str = ""
     notes: str = ""
+
+
+class ChecklistSetUpdate(_StrSafe):
+    name: Optional[str] = None
+    year: Optional[str] = None
+    brand: Optional[str] = None
+    sport: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class ChecklistItemIn(_StrSafe):

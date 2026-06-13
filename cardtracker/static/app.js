@@ -382,11 +382,41 @@ $("#new-set-form").addEventListener("submit", async (e) => {
   if (r.ok) { f.reset(); loadChecklists(); } else alert("Could not create checklist.");
 });
 
+// Import a checklist straight from a file — creates the set (named from the
+// file) and imports its rows, then opens it so you can fill in the details.
+$("#cl-import-input").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = "";
+  const base = file.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim();
+  const set = await (await fetch("/api/checklists", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: base || "Imported checklist" }),
+  })).json();
+  const fd = new FormData();
+  fd.append("file", file);
+  const r = await fetch(`/api/checklists/${set.id}/import`, { method: "POST", body: fd });
+  const res = await r.json().catch(() => ({}));
+  if (r.ok) { await loadChecklists(); openChecklist(set.id); }
+  else { alert(res.detail || "Import failed."); await loadChecklists(); openChecklist(set.id); }
+});
+
+// Save the set's details (name/year/brand/sport) after the fact
+$("#cl-edit-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const payload = { name: f.elements["name"].value, year: f.elements["year"].value, brand: f.elements["brand"].value, sport: f.elements["sport"].value };
+  const r = await fetch("/api/checklists/" + state.checklistId, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  if (r.ok) { openChecklist(state.checklistId); loadChecklists(); } else alert("Could not save details.");
+});
+
 async function openChecklist(id) {
   state.checklistId = id;
   const d = await (await fetch("/api/checklists/" + id)).json();
   const s = d.set;
   $("#checklist-title").textContent = [s.year, s.brand, s.name].filter(Boolean).join(" ") || "Checklist";
+  const ef = $("#cl-edit-form");
+  ["name", "year", "brand", "sport"].forEach((k) => { if (ef.elements[k]) ef.elements[k].value = s[k] || ""; });
   $("#checklist-progress").innerHTML = `<div class="bar"><div class="bar-fill" style="width:${s.pct_complete}%"></div></div><div class="set-sub">${s.owned_items}/${s.total_items} owned · ${s.pct_complete}% complete</div>`;
   renderItems(d.items);
   $("#checklist-modal").classList.remove("hidden");
