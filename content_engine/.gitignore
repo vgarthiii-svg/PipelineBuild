@@ -1,0 +1,19 @@
+# Secrets
+.env
+
+# Runtime database
+backend/data/*.db
+backend/data/*.db-journal
+data/*.db
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# OS / editors
+.DS_Store
+.vscode/
+.idea/

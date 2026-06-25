@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Content Creator Engine</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo">✦</div>
+        <div>
+          <div class="brand-name">Content Engine</div>
+          <div class="brand-sub">Marketing command center</div>
+        </div>
+      </div>
+      <nav class="nav" id="nav">
+        <a data-route="dashboard" class="nav-item">📊 Dashboard</a>
+        <a data-route="new" class="nav-item">✨ New Content</a>
+        <a data-route="library" class="nav-item">📚 Library</a>
+        <a data-route="brands" class="nav-item">🏷️ Brand Profiles</a>
+        <a data-route="calendar" class="nav-item">🗓️ Calendar</a>
+        <a data-route="styleguide" class="nav-item">📐 Style Guide</a>
+        <a data-route="settings" class="nav-item">⚙️ Settings</a>
+      </nav>
+      <div class="sidebar-foot">
+        <div id="ai-status" class="pill">AI: …</div>
+      </div>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div id="crumb" class="crumb">Dashboard</div>
+        <div class="top-actions">
+          <button class="btn btn-primary" onclick="route('new')">+ New Content</button>
+        </div>
+      </header>
+      <section id="view" class="view"><div class="loading">Loading…</div></section>
+    </main>
+  </div>
+  <div id="toast" class="toast"></div>
+  <div id="modal" class="modal-backdrop hidden"><div class="modal" id="modal-body"></div></div>
+
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
