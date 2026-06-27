@@ -130,6 +130,13 @@ def root():
     return RedirectResponse(url="/static/index.html")
 
 
+@app.get("/favicon.ico")
+def favicon():
+    """Serve favicon from the canonical root path (browsers check /favicon.ico by default)."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/static/favicon.svg", status_code=301)
+
+
 @app.get("/api/health")
 def health():
     return {

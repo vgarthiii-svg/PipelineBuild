@@ -21,6 +21,8 @@ function app() {
     hsQuery: '',
     hsImportRunning: false,
     hsImportResult: null,
+    syncingPipelines: false,
+    syncResult: null,
 
     // Table display preferences (persisted to localStorage)
     tableDensity: 'comfortable',      // 'comfortable' | 'compact'
@@ -109,26 +111,11 @@ function app() {
     presetDescription: '',
     advancedWeights: false,
 
-    // Criterion info popup (hover over criteria tile)
-    criterionInfo: null,
-    criterionInfoVisible: false,
-    criterionInfoX: 0,
-    criterionInfoY: 0,
-    _criterionInfoTimer: null,
-
-    // Layer info popup (hover over Layer 1/2/3 tiles)
-    layerInfo: null,
-    layerInfoVisible: false,
-    layerInfoX: 0,
-    layerInfoY: 0,
-    _layerInfoTimer: null,
-
-    // Generic tip popup (column headers, group headers, tier badges)
-    tip: null,
-    tipVisible: false,
-    tipX: 0,
-    tipY: 0,
-    _tipTimer: null,
+    // Unified tooltip system — ONE popup, delegation-based triggering.
+    // Use data-tt="key" in HTML. Content registered in TOOLTIP_CONTENT below.
+    tt: { visible: false, x: 0, y: 0, content: null },
+    _ttTimer: null,
+    _ttInstalled: false,
 
     // Score breakdown hover popup
     breakdown: null,
@@ -200,6 +187,9 @@ function app() {
 
       // Global keyboard shortcuts
       window.addEventListener('keydown', (e) => this._handleGlobalKey(e));
+
+      // Unified tooltip system (delegation-based)
+      this._initTooltips();
 
       await this.loadSourceStatus();
       await this.loadScoringPresets();
@@ -690,183 +680,109 @@ function app() {
       this.totalLibraryCount = this.libraryGroups.reduce((sum, g) => sum + g.criteria.length, 0);
     },
 
-    _hideAllTips() {
-      // Kill any active hover popup so moving across elements doesn't leave stale popups behind
-      clearTimeout(this._tipTimer);
-      clearTimeout(this._layerInfoTimer);
-      clearTimeout(this._criterionInfoTimer);
-      this.tipVisible = false;
-      this.layerInfoVisible = false;
-      this.criterionInfoVisible = false;
+    // ===== Unified Tooltip System =====
+    // ONE popup, delegation-based. Any element with `data-tt="key"` shows a tooltip.
+    // For criterion tiles, use `data-tt="criterion"` + `data-tt-id="<library_id>"`.
+
+    _ttRegistry() {
+      return {
+        // Pipeline column headers
+        col_matchmaker: { title: 'Matchmaker Score', body: 'Final 0-100 score. Combines PMF (fit) and RS (relationship), then multiplies by Friction and Intent. Higher is better.', scale: [['70+','Hot'],['50-69','Warm'],['30-49','Monitor'],['< 30','Pass']] },
+        col_pmf: { title: 'PMF · Product-Market Fit', body: 'How well this prospect matches your lens on the criteria you enabled. Averaged from all active criterion scores, weighted by importance, normalized to 0-100.' },
+        col_rs: { title: 'RS · Relationship Strength', body: 'How strong your existing relationship is with this prospect, 0-5. Built from email history, calendar meetings, conference overlaps, CRM activity, and manual notes.', scale: [['5','Inner circle'],['4','Strong'],['3','Warm'],['2','Light'],['1','Aware'],['0','Cold']] },
+        col_fric: { title: 'Fric · Friction Coefficient', body: 'How easily you can do business with them, 0.7-1.0. Compares behavior profiles; lower means more friction.' },
+        col_intent: { title: 'Intent · Buying Signal Multiplier', body: 'Whether the prospect is in-market, 0.8-1.5×. Built from hiring, funding, partnership announcements, product launches, strategic statements.' },
+        col_tier: { title: 'Tier', body: 'Bucket based on Matchmaker Score. Drives outreach priority.', scale: [['Hot','70+ priority'],['Warm','50-69 secondary'],['Monitor','30-49 track'],['Pass','< 30 skip'],['Filtered','blocked by identity filter']] },
+        col_company: { title: 'Company', body: 'The prospect being evaluated against the selected lens. Click to open the detail panel.' },
+        col_type: { title: 'Type', body: 'Company category. Drives heuristic scoring and default behavior profile.' },
+        // Criteria groups
+        group_market: { title: 'Market Fit', body: 'Do they serve overlapping customers? Covers geography, buyer personas, customer segments, insurance lines.' },
+        group_product: { title: 'Product & Technology', body: 'Can we build something together? Covers complementarity, APIs, platform compatibility, digital capabilities.' },
+        group_business: { title: 'Business Dynamics', body: 'Will the deal structure work? Covers distribution focus, revenue model, partnership history, regulatory coverage.' },
+        group_relationship: { title: 'Relationship & Timing', body: 'Can you execute right now? Covers decision-maker access, sales cycle, strategic priority, event proximity.' },
+        // Tier chips
+        tier_hot: { title: 'Hot · 70+', body: 'Strong fit or relationship. Priority for outreach this week. Worth generating an intro for.' },
+        tier_warm: { title: 'Warm · 50-69', body: 'Solid candidate. Secondary priority. Often one better signal away from Hot.' },
+        tier_monitor: { title: 'Monitor · 30-49', body: 'Track for change. Do not pursue. If a material event happens, they could move up.' },
+        tier_pass: { title: 'Pass · Below 30', body: 'Skip for now. Poor fit on market or product dimensions. Revisit only if something changes.' },
+        tier_filtered: { title: 'Filtered', body: 'Excluded by a Layer 1 identity filter before scoring. Edit the filter to include them.' },
+        // Layer tiles (richer, still rendered by the same popup)
+        layer1: { title: 'Layer 1: Client', subtitle: 'The lens', what: 'Pick any company to use as the lens. Their profile becomes the perspective the pipeline is scored against.', why: 'Scoring is directional. Same prospect scored against Tivly vs Circle AI produces different results — because the criteria and context flip.', how: 'Click the dropdown. Active clients show first with a green ✓. Any company in the system is selectable. New lens = auto-generates criteria + rescores everything.', effect: 'Changes the entire pipeline below. New lens = new scores, new ranks, new tiers.' },
+        layer2: { title: 'Layer 2: Data Sources', subtitle: 'Relationship evidence', what: 'Toggles which external sources feed the Relationship Score (RS). Sources include Gmail, Calendar, HubSpot, conference DB, internal notes.', why: 'RS is the second half of Matchmaker. Turning sources on/off changes what counts as relationship evidence.', how: 'Check a source to include it. Green "Active" means configured and returning data. Gray "Stub" means the integration is scaffolded but not connected.', effect: 'Moves RS scores directly, which flows into Matchmaker.' },
+        layer3: { title: 'Layer 3: Scoring Weights', subtitle: 'Fit vs relationship balance', what: 'Controls how much of the Matchmaker score comes from PMF (fit via criteria) vs RS (relationship strength).', why: 'Cold prospecting leans on PMF. Network-first strategies lean on RS. Different deals need different balances.', how: 'Pick a preset (60/40 default, 80/20 cold, 50/50 balanced, 30/70 network-first) or drag sliders for custom mix.', effect: 'Rebalances every Matchmaker score in the pipeline instantly.' },
+      };
     },
 
-    showTip(tipKey, event) {
-      if (!tipKey) return;
-      const content = {
-        // ---- Pipeline column headers ----
-        col_matchmaker: {
-          title: 'Matchmaker Score',
-          body: 'Final 0-100 score. Combines PMF (fit) and RS (relationship), then multiplies by Friction (how smoothly you can work together) and Intent (whether they are actively buying). Higher is better.',
-          scale: [['70+', 'Hot — prioritize outreach'], ['50-69', 'Warm — secondary outreach'], ['30-49', 'Monitor — track for changes'], ['< 30', 'Pass — skip for now']],
-        },
-        col_pmf: {
-          title: 'PMF · Product-Market Fit',
-          body: 'How well this prospect matches your lens on the criteria you enabled. Averaged from all active criterion scores, weighted by importance, normalized to 0-100.',
-        },
-        col_rs: {
-          title: 'RS · Relationship Strength',
-          body: 'How strong your existing relationship is with this prospect, 0-5. Built from email history, calendar meetings, conference overlaps, CRM activity, and manual notes.',
-          scale: [['5', 'Inner circle'], ['4', 'Strong (regular contact)'], ['3', 'Warm (some history)'], ['2', 'Light (1-2 touchpoints)'], ['1', 'Aware (name in CRM)'], ['0', 'Cold (no evidence)']],
-        },
-        col_fric: {
-          title: 'Fric · Friction Coefficient',
-          body: 'How easily you can do business with them, 0.7-1.0. Compares your lens behavior profile (sales motion, decision speed, culture) against theirs. Lower means more friction; 1.0 means clean alignment.',
-        },
-        col_intent: {
-          title: 'Intent · Buying Signal Multiplier',
-          body: 'Whether the prospect is showing signs of being in-market, 0.8-1.5×. Built from recent hiring, funding, partnership announcements, expansion news, and strategic statements. Higher means they are actively moving.',
-        },
-        col_tier: {
-          title: 'Tier',
-          body: 'Bucket based on the Matchmaker Score. Drives color coding and outreach priority.',
-          scale: [['Hot', '70+ score, priority outreach'], ['Warm', '50-69 score, secondary outreach'], ['Monitor', '30-49 score, track but do not pursue'], ['Pass', '< 30, skip for now'], ['Filtered', 'Blocked by an identity filter — did not qualify for scoring']],
-        },
-        col_company: {
-          title: 'Company',
-          body: 'The prospect being evaluated against the lens selected in Layer 1. Click to open the detail panel.',
-        },
-        col_type: {
-          title: 'Type',
-          body: 'Company category — Regional Carrier, National Brokerage, Technology, Marketplace, etc. Drives heuristic scoring and determines the default behavior profile.',
-        },
-        // ---- Criteria group headers ----
-        group_market: {
-          title: 'Market Fit',
-          body: 'Does this prospect operate in the same market as your lens? Covers geography, buyer personas, customer segments, and insurance lines. This is the "do they serve overlapping customers?" dimension.',
-        },
-        group_product: {
-          title: 'Product & Technology',
-          body: 'Does their product pair with yours? Covers complementarity, API integration readiness, platform compatibility, and digital capabilities. This is the "can we build something together?" dimension.',
-        },
-        group_business: {
-          title: 'Business Dynamics',
-          body: 'Do their business mechanics support a deal? Covers distribution focus, revenue model alignment, partnership history, market position, and regulatory coverage. This is the "will the deal structure actually work?" dimension.',
-        },
-        group_relationship: {
-          title: 'Relationship & Timing',
-          body: 'Can you execute right now? Covers decision-maker accessibility, sales cycle alignment, strategic priority fit, and event proximity. This is the "is the timing right?" dimension.',
-        },
-        // ---- Tier labels (used in detail panel too) ----
-        tier_hot: { title: 'Hot Tier · 70+', body: 'Strong fit and/or strong relationship. Priority for outreach this week. Usually worth generating an intro package for.' },
-        tier_warm: { title: 'Warm Tier · 50-69', body: 'Solid candidate. Secondary priority — pursue after Hot tier is worked. Often just needs one better signal (stronger relationship, more criteria matches) to move up.' },
-        tier_monitor: { title: 'Monitor Tier · 30-49', body: 'Track for change, do not actively pursue. If they hire a new VP, launch a new product, or you meet someone there, they could move up fast.' },
-        tier_pass: { title: 'Pass Tier · Below 30', body: 'Skip for now. Fundamentally poor fit on either market or product dimensions. Revisit only if something material changes.' },
-        tier_filtered: { title: 'Filtered · Blocked', body: 'Excluded by a Layer 1 identity filter before scoring. Hover over the score cell or open the detail panel to see the exact filter reason. Edit the filter in Layer 1 to include them.' },
-      };
-      const info = content[tipKey];
-      if (!info) return;
-      const rect = event.currentTarget.getBoundingClientRect();
-      const popupWidth = 300;
-      let x = rect.left + rect.width / 2 - popupWidth / 2;
-      x = Math.max(10, Math.min(window.innerWidth - popupWidth - 10, x));
-      // Prefer below the target; flip above if too low
+    _ttLookupContent(el) {
+      const key = el.getAttribute('data-tt');
+      if (!key) return null;
+      if (key === 'criterion') {
+        // Dynamic: look up library entry by id
+        const id = parseInt(el.getAttribute('data-tt-id'), 10);
+        if (!id) return null;
+        for (const g of (this.libraryGroups || [])) {
+          for (const lib of (g.criteria || [])) {
+            if (lib.library_id === id) {
+              return {
+                title: lib.name,
+                subtitle: g.group_name,
+                body: lib.description,
+                why: lib.why_it_matters,
+                scoreScale: true,
+              };
+            }
+          }
+        }
+        return null;
+      }
+      return this._ttRegistry()[key] || null;
+    },
+
+    _ttPosition(el, width = 320) {
+      const rect = el.getBoundingClientRect();
+      let x = rect.left + rect.width / 2 - width / 2;
+      x = Math.max(10, Math.min(window.innerWidth - width - 10, x));
       let y = rect.bottom + 8;
-      if (y + 200 > window.innerHeight) {
-        y = Math.max(10, rect.top - 210);
+      if (y + 240 > window.innerHeight) {
+        y = Math.max(10, rect.top - 250);
       }
-      this.tipX = x;
-      this.tipY = y;
-      // Kill any other open popup before opening this one
-      this._hideAllTips();
-      this._tipTimer = setTimeout(() => {
-        this.tip = info;
-        this.tipVisible = true;
-      }, 120);
+      return { x, y };
     },
 
-    hideTip() {
-      clearTimeout(this._tipTimer);
-      this.tipVisible = false;
-    },
+    _initTooltips() {
+      if (this._ttInstalled) return;
+      this._ttInstalled = true;
 
-    showLayerInfo(layerKey, event) {
-      const content = {
-        layer1: {
-          title: 'Layer 1: Client',
-          subtitle: 'The lens',
-          what: 'Pick any company in the pool. Their profile becomes the lens through which every other company in the pipeline is evaluated.',
-          why: 'Matchmaker scoring is directional. Erie scored against Tivly is different from Erie scored against Circle AI because the criteria and profiles flip. Layer 1 sets the "from whose perspective?" reference point.',
-          how: 'Click the dropdown. Active clients (Tivly, Circle AI, Flex) show first with a green ✓. Below that, every other company in the system is selectable. Picking a new company auto-generates their criteria set and rescores the pipeline instantly.',
-          effect: 'Changes the entire pipeline below. New lens = new scores, new ranks, new tiers.',
-        },
-        layer2: {
-          title: 'Layer 2: Data Sources',
-          subtitle: 'Where relationship evidence comes from',
-          what: 'Toggles which external sources feed the Relationship Score (RS) column. Sources include Gmail, Google Calendar, HubSpot, conference attendee lists, and internal relationship notes.',
-          why: 'The RS score (0-5) is the second half of the Matchmaker formula. Turning a source on or off changes what counts as "relationship evidence" for each prospect. Turning off Gmail means email history stops contributing; turning on HubSpot pulls CRM activity into the score.',
-          how: 'Check a source to include it. Green "Active" means the source is configured and returning data. Gray "Stub" means the service file exists but credentials/API keys are not set up.',
-          effect: 'Directly moves the RS score for every company, which in turn moves the Matchmaker score.',
-        },
-        layer3: {
-          title: 'Layer 3: Scoring Weights',
-          subtitle: 'Fit vs. relationship balance',
-          what: 'Controls how much of the Matchmaker score comes from product-market fit (PMF, scored via criteria) versus relationship strength (RS, from data sources).',
-          why: 'Different outreach strategies demand different balances. Cold prospecting relies on PMF because you have no relationship yet. Network-first strategies lean on RS because warm intros close faster than cold fits.',
-          how: 'Pick a preset from the dropdown: 60/40 default, 80/20 cold prospecting, 50/50 balanced, or 30/70 network-first. Or drag the PMF/RS sliders to build a custom mix. Any change rescores the entire pipeline.',
-          effect: 'Rebalances every Matchmaker score. Companies with strong relationships but weak fit climb with more RS weight. Companies with great fit but no relationships climb with more PMF weight.',
-        },
-      };
-      const info = content[layerKey];
-      if (!info) return;
-      const rect = event.currentTarget.getBoundingClientRect();
-      const popupWidth = 360;
-      let x = rect.right + 10;
-      if (x + popupWidth > window.innerWidth - 10) {
-        x = Math.max(10, rect.left - popupWidth - 10);
-      }
-      const y = Math.max(10, Math.min(window.innerHeight - 360, rect.top));
-      this.layerInfoX = x;
-      this.layerInfoY = y;
-      this._hideAllTips();
-      this._layerInfoTimer = setTimeout(() => {
-        this.layerInfo = info;
-        this.layerInfoVisible = true;
-      }, 180);
-    },
+      // Delegation: single pair of listeners for every tooltip in the app
+      document.addEventListener('mouseover', (e) => {
+        const el = e.target.closest('[data-tt]');
+        if (!el) return;
+        // Entering the same element we're already showing? No-op.
+        if (this._ttCurrentEl === el) return;
+        this._ttCurrentEl = el;
+        const content = this._ttLookupContent(el);
+        if (!content) return;
+        clearTimeout(this._ttTimer);
+        this._ttTimer = setTimeout(() => {
+          const pos = this._ttPosition(el);
+          this.tt = { visible: true, x: pos.x, y: pos.y, content };
+        }, 350);
+      });
 
-    hideLayerInfo() {
-      clearTimeout(this._layerInfoTimer);
-      this.layerInfoVisible = false;
-    },
+      document.addEventListener('mouseout', (e) => {
+        const el = e.target.closest('[data-tt]');
+        if (!el) return;
+        // Moving to a child of the same element? Keep open.
+        if (el.contains(e.relatedTarget)) return;
+        this._ttCurrentEl = null;
+        clearTimeout(this._ttTimer);
+        this.tt.visible = false;
+      });
 
-    showCriterionInfo(lib, groupName, event) {
-      if (!lib) return;
-      const rect = event.currentTarget.getBoundingClientRect();
-      const popupWidth = 320;
-      // Prefer showing to the right of the tile; flip to left if near the edge
-      let x = rect.right + 10;
-      if (x + popupWidth > window.innerWidth - 10) {
-        x = Math.max(10, rect.left - popupWidth - 10);
-      }
-      const y = Math.max(10, Math.min(window.innerHeight - 380, rect.top));
-      this.criterionInfoX = x;
-      this.criterionInfoY = y;
-      this._hideAllTips();
-      this._criterionInfoTimer = setTimeout(() => {
-        this.criterionInfo = {
-          name: lib.name,
-          description: lib.description,
-          why_it_matters: lib.why_it_matters,
-          group_name: groupName,
-          default_weight: lib.default_weight,
-        };
-        this.criterionInfoVisible = true;
-      }, 180);
-    },
-
-    hideCriterionInfo() {
-      clearTimeout(this._criterionInfoTimer);
-      this.criterionInfoVisible = false;
+      // Safety nets: anything that leaves hover context should clear
+      window.addEventListener('scroll', () => { this.tt.visible = false; this._ttCurrentEl = null; }, { passive: true, capture: true });
+      window.addEventListener('blur', () => { this.tt.visible = false; this._ttCurrentEl = null; });
+      document.addEventListener('visibilitychange', () => { this.tt.visible = false; this._ttCurrentEl = null; });
     },
 
     weightImpactLabel(weight) {
@@ -893,6 +809,7 @@ function app() {
 
     async showBreakdown(entry, event) {
       if (!entry) return;
+      this._rememberTipTrigger(event);
       // Position popup to the LEFT of the cell so it doesn't cover the rest of the row
       const rect = event.target.getBoundingClientRect();
       const popupWidth = 360;
@@ -1117,6 +1034,19 @@ function app() {
         await this.loadAgents();
       } finally {
         this.agentRunning = null;
+      }
+    },
+
+    async syncAllPipelines() {
+      this.syncingPipelines = true;
+      this.syncResult = null;
+      try {
+        const res = await fetch(`${API}/api/agents/sync-pipelines`, { method: 'POST' });
+        this.syncResult = await res.json();
+        this.showToast(`Sync complete. ${this.syncResult.added || 0} pipeline entries added.`);
+        if (this.selectedClientId) await this.loadPipeline();
+      } finally {
+        this.syncingPipelines = false;
       }
     },
 
@@ -1834,13 +1764,17 @@ function app() {
 
     async enrichAll() {
       if (!this.selectedClientId) return;
-      if (!confirm('Enrich profiles for all companies? This is free and uses local heuristics plus Apollo/HubSpot if configured.')) return;
+      if (!confirm('Enrich profiles for all companies? This is free and uses local heuristics plus Apollo/HubSpot if configured. Pipeline will rescore automatically at the end.')) return;
       this.enriching = true;
       try {
         const res = await fetch(`${API}/api/profiles/bulk/enrich?client_id=${this.selectedClientId}`, { method: 'POST' });
         const data = await res.json();
-        this.showToast(data.message);
+        // Auto-rescore so enriched profile data actually moves Matchmaker scores in the pipeline
+        await fetch(`${API}/api/pipeline/${this.selectedClientId}/score-all`, { method: 'POST' });
+        this._invalidateBreakdownCache();
+        await this.loadPipeline();
         await this.loadNotifications();
+        this.showToast(`${data.message} Pipeline rescored.`);
       } finally { this.enriching = false; }
     },
 

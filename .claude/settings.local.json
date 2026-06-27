@@ -6,7 +6,32 @@
       "Bash(unzip -o /Users/vinnieg/Downloads/BD_Pipeline_Agent_Bundle.zip -d .)",
       "Bash(mkdir -p /Users/vinnieg/Projects)",
       "Bash(cp -R /Users/vinnieg/Downloads/PipelineBuild /Users/vinnieg/Projects/PipelineBuild)",
-      "Read(//Users/vinnieg/Projects/**)"
+      "Read(//Users/vinnieg/Projects/**)",
+      "Read(//Users/vinnieg/Desktop/**)",
+      "Read(//Users/vinnieg/Library/LaunchAgents/**)",
+      "Bash(echo \"=== Projects dir ===\"; ls -la ~/Projects/ 2>/dev/null; echo \"=== Search for Vinsational/Engine projects ===\"; find ~ -maxdepth 4 -iname \"*vinsational*\" -o -iname \"*engine*\" 2>/dev/null | grep -v \"node_modules\\\\|Library/Caches\\\\|.git/\" | head -30)",
+      "Bash(ls -R \"app/[client]\")",
+      "Bash(find app/api -type f)",
+      "Bash(ls app/inbox)",
+      "Bash(cut -d= -f1 .env.local)",
+      "Bash(set -e)",
+      "Bash(launchctl unload *)",
+      "Bash(lsof -nP -iTCP:3000 -sTCP:LISTEN)",
+      "Bash(mv /Users/vinnieg/my-new-project /Users/vinnieg/Projects/VinsationalEngine)",
+      "Bash(/usr/bin/sed -i '' 's#__TRACKED_VAR__#__TRACKED_VAR__#g' ~/Library/LaunchAgents/com.vinsational.engine.plist)",
+      "Bash(/usr/bin/sed -i '' 's#__TRACKED_VAR__#__TRACKED_VAR__#g' ~/Library/LaunchAgents/com.vinsational.engine.plist.bak-2026-06-21)",
+      "Bash(/usr/bin/sed -i '' 's#__TRACKED_VAR__#__TRACKED_VAR__#g' '/Users/vinnieg/Desktop/Vinsational \\(setup\\)/Open Vinsational Engine.command')",
+      "Bash(/usr/bin/sed -i '' 's#\"name\": \"my-new-project\"#\"name\": \"vinsational-engine\"#' __TRACKED_VAR__/package.json)",
+      "Bash(grep -n '\"name\"' __TRACKED_VAR__/package.json)",
+      "Bash(ls -la CLAUDE.md)",
+      "Bash(ls -d /Users/vinnieg/.local/node/bin)",
+      "Bash(chmod +x \"/Users/vinnieg/Desktop/Vinsational \\(setup\\)/Develop Engine.command\")",
+      "Bash(sed -n \"/export async function addTaskAction/,/^}/p\" lib/actions.ts)",
+      "Bash(sed -n \"/export async function addAccountAction/,/^}/p\" lib/actions.ts)",
+      "Bash(exit 1)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git rm *)"
     ]
   }
 }

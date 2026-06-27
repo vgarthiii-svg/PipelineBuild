@@ -46,3 +46,4 @@ node_modules/
 
 # Alembic — keep versions, but not local test runs
 # (versions ARE committed for migration history)
+data/server.log

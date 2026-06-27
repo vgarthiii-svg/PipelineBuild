@@ -277,17 +277,69 @@ def heuristic_score_prospect(prospect, client, criteria):
     """
     results = []
 
-    # Build a prospect profile from available data
+    # Build a prospect profile from available data. Fall back to the BusinessProfile
+    # table (where enrichment writes) when the Prospect row fields are thin.
+    from app.models import BusinessProfile
+    from sqlalchemy.orm import object_session
+    bp = None
+    try:
+        sess = object_session(prospect)
+        if sess:
+            bp = sess.query(BusinessProfile).filter(
+                BusinessProfile.prospect_id == prospect.id
+            ).first()
+    except Exception:
+        bp = None
+
+    # Description: prefer Prospect.description, fall back to enriched fields
+    desc_parts = []
+    if prospect.description:
+        desc_parts.append(prospect.description)
+    if bp:
+        if bp.long_description:
+            desc_parts.append(bp.long_description)
+        if bp.one_liner:
+            desc_parts.append(bp.one_liner)
+        if bp.key_differentiators:
+            desc_parts.append(bp.key_differentiators)
+        if bp.primary_products:
+            desc_parts.append(bp.primary_products)
+        if bp.target_customer_types:
+            desc_parts.append(bp.target_customer_types)
+        if bp.sales_channels:
+            desc_parts.append(bp.sales_channels)
+    p_desc = " ".join(desc_parts).lower()
+
     p_type = (prospect.type or "").lower()
     p_vertical = (prospect.industry_vertical or "").lower()
     p_model = (prospect.business_model or "").lower()
     p_stage = (prospect.stage or "").lower()
     p_segment = _infer_segment(prospect.employees)
-    p_desc = (prospect.description or "").lower()
     p_name = (prospect.name or "").lower()
 
-    # Client context
-    c_desc = (client.description or "").lower()
+    # Client context — also pull in client BusinessProfile for richer signal
+    client_bp = None
+    try:
+        from app.models import Prospect as _P
+        sess = object_session(client)
+        if sess:
+            # Find a prospect with same name as client to get its profile
+            match = sess.query(_P).filter(_P.name.ilike(client.name)).first()
+            if match:
+                client_bp = sess.query(BusinessProfile).filter(
+                    BusinessProfile.prospect_id == match.id
+                ).first()
+    except Exception:
+        client_bp = None
+
+    client_desc_parts = []
+    if client.description:
+        client_desc_parts.append(client.description)
+    if client_bp and client_bp.long_description:
+        client_desc_parts.append(client_bp.long_description)
+    if client_bp and client_bp.target_customer_types:
+        client_desc_parts.append(client_bp.target_customer_types)
+    c_desc = " ".join(client_desc_parts).lower()
     c_buyer = (client.target_buyer or "").lower()
     c_revenue = (client.primary_revenue_driver or "").lower()
 

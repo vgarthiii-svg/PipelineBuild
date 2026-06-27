@@ -4,30 +4,82 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>BD Pipeline Agent</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.svg">
+  <meta name="theme-color" content="#ec4899">
   <script src="https://cdn.tailwindcss.com"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-  <script src="/static/app.js?v=2026042122"></script>
+  <script src="/static/app.js?v=2026042131"></script>
   <style>
     [x-cloak] { display: none !important; }
-    body { background: #f8fafc; color: #1e293b; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-    .tier-hot { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
-    .tier-warm { background: #fef9c3; color: #854d0e; border: 1px solid #fef08a; }
-    .tier-monitor { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
-    .tier-pass { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
-    .tier-unscored { background: #f1f5f9; color: #94a3b8; border: 1px solid #e2e8f0; }
-    .tier-filtered { background: #f1f5f9; color: #cbd5e1; border: 1px solid #e2e8f0; text-decoration: line-through; }
-    .dot-filled { color: #f59e0b; }
-    .dot-empty { color: #e2e8f0; }
+    /* --- Tableau BI palette (long-session optimized) --- */
+    :root {
+      --bg: #F5F5F2;          /* Tableau paper */
+      --surface: #FFFFFF;     /* card / table */
+      --border: #E5E5E0;      /* warm hairline */
+      --border-strong: #D4D4CE;
+      --text: #333333;        /* body copy */
+      --text-muted: #6B6B6B;
+      --text-soft: #9C9C9C;
+      --primary: #4E79A7;     /* Tableau blue */
+      --primary-hover: #3D6589;
+      --primary-soft: #E8EEF5;
+      --tier-hot: #59A14F;    /* Tableau green */
+      --tier-hot-bg: #EDF5EC;
+      --tier-warm: #F28E2B;   /* Tableau orange */
+      --tier-warm-bg: #FDEFDF;
+      --tier-monitor: #6B6B6B;
+      --tier-monitor-bg: #F0F0EC;
+      --tier-pass: #E15759;   /* Tableau red */
+      --tier-pass-bg: #FBE7E7;
+      --tier-filtered-bg: #F0F0EC;
+    }
+    body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    /* Normalize form control fonts so inputs/textareas/selects match the page */
+    input, textarea, select, button { font-family: inherit; }
+    /* Override Tailwind slate tones with warm Tableau ones */
+    .bg-white { background-color: var(--surface) !important; }
+    .bg-gray-50 { background-color: var(--bg) !important; }
+    .bg-gray-100 { background-color: var(--border) !important; }
+    .border-gray-200 { border-color: var(--border) !important; }
+    .border-gray-300 { border-color: var(--border-strong) !important; }
+    /* Primary accent — tune Tailwind blues to Tableau blue */
+    .text-blue-600 { color: var(--primary) !important; }
+    .text-blue-700 { color: var(--primary-hover) !important; }
+    .bg-blue-600 { background-color: var(--primary) !important; }
+    .bg-blue-700 { background-color: var(--primary-hover) !important; }
+    .hover\:bg-blue-700:hover { background-color: var(--primary-hover) !important; }
+    .bg-blue-50 { background-color: var(--primary-soft) !important; }
+    .ring-blue-500 { --tw-ring-color: var(--primary) !important; }
+    .border-blue-500 { border-color: var(--primary) !important; }
+    .border-blue-300 { border-color: var(--primary) !important; }
+    /* Tier chips — Tableau muted palette */
+    .tier-hot      { background: var(--tier-hot-bg); color: var(--tier-hot); }
+    .tier-warm     { background: var(--tier-warm-bg); color: var(--tier-warm); }
+    .tier-monitor  { background: var(--tier-monitor-bg); color: var(--tier-monitor); }
+    .tier-pass     { background: var(--tier-pass-bg); color: var(--tier-pass); }
+    .tier-unscored { background: var(--tier-monitor-bg); color: var(--text-soft); }
+    .tier-filtered { background: var(--tier-filtered-bg); color: var(--text-soft); text-decoration: line-through; }
+    /* RS dots */
+    .dot-filled { color: #F28E2B; }
+    .dot-empty { color: var(--border); }
+    /* Slide panel */
     .slide-panel { transition: transform 0.3s ease; }
     .slide-panel.open { transform: translateX(0); }
     .slide-panel.closed { transform: translateX(100%); }
-    input[type="range"] { accent-color: #3b82f6; }
+    /* Range slider */
+    input[type="range"] { accent-color: var(--primary); }
     /* Compact density: tighter rows, smaller type */
     .table-compact th, .table-compact td { padding-top: 0.25rem !important; padding-bottom: 0.25rem !important; }
     .table-compact td { font-size: 12px; }
     .table-compact .font-bold { font-weight: 600; }
-    .layer-card { background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; }
-    .layer-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; margin-bottom: 8px; }
+    /* Layer cards — crisp white on cream with warm border */
+    .layer-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }
+    .layer-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-soft); margin-bottom: 8px; }
+    /* Table header — warmer than slate */
+    thead.bg-gray-50 { background-color: #FAFAF8 !important; }
+    /* Hover row */
+    .hover\:bg-blue-50:hover { background-color: var(--primary-soft) !important; }
   </style>
 </head>
 <body x-data="app()" x-init="init()">
@@ -106,7 +158,7 @@
       <div class="grid grid-cols-3 gap-4 mb-5">
 
         <!-- LAYER 1: CLIENT -->
-        <div class="layer-card relative" @mouseenter="showLayerInfo('layer1', $event)" @mouseleave="hideLayerInfo()">
+        <div class="layer-card relative" data-tt="layer1">
           <div class="layer-label flex items-center gap-1">Layer 1: Client <span class="text-gray-300 text-[10px] hover:text-blue-500">ⓘ</span></div>
           <div class="flex gap-2 mb-2 relative" @click.outside="clientDropdownOpen = false">
             <!-- Custom dropdown button -->
@@ -156,18 +208,42 @@
             </div>
           </div>
           <div x-show="activeClient" class="text-xs text-gray-500 space-y-0.5">
-            <div class="flex items-center gap-2 mb-1">
-              <span x-show="activeClient?.active" class="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium">ACTIVE CLIENT</span>
-              <span x-show="!activeClient?.active" class="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-medium">INACTIVE</span>
-              <button @click="toggleClientActive()" class="text-xs text-blue-600 hover:underline" x-text="activeClient?.active ? 'Mark Inactive' : 'Make Active'"></button>
-              <button @click="deleteClient()" class="text-xs text-red-600 hover:underline" title="Remove as client. Company stays as prospect in other pipelines.">Delete Client</button>
-              <button @click="deleteCompanyEverywhere()" class="text-xs text-red-700 hover:underline font-semibold" title="Nuclear: wipe this company from every pipeline, prospect record, and client record.">Delete Everywhere</button>
-              <button @click="_computeLastRefreshInfo(); showRefreshMenu = true;" class="text-xs text-gray-500 hover:text-blue-600 ml-auto flex items-center gap-1" title="Refresh client data">
-                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+            <div class="flex items-center gap-1.5 mb-2 flex-wrap">
+              <span x-show="activeClient?.active" class="inline-flex items-center gap-1 text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-semibold uppercase tracking-wide">
+                <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>Active
+              </span>
+              <span x-show="!activeClient?.active" class="inline-flex items-center gap-1 text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-semibold uppercase tracking-wide">
+                <span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>Inactive
+              </span>
+
+              <!-- Activate / Deactivate -->
+              <button @click="toggleClientActive()"
+                :class="activeClient?.active ? 'border-gray-300 text-gray-600 hover:bg-gray-50' : 'border-green-300 text-green-700 hover:bg-green-50'"
+                class="inline-flex items-center gap-1 text-[11px] border px-2 py-1 rounded-md transition-colors bg-white">
+                <svg x-show="!activeClient?.active" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+                <svg x-show="activeClient?.active" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M18 12H6"/></svg>
+                <span x-text="activeClient?.active ? 'Deactivate' : 'Activate'"></span>
+              </button>
+
+              <!-- Refresh -->
+              <button @click="_computeLastRefreshInfo(); showRefreshMenu = true;" class="inline-flex items-center gap-1 text-[11px] border border-blue-300 text-blue-700 hover:bg-blue-50 px-2 py-1 rounded-md transition-colors bg-white" title="Refresh profile, pipeline, or run deep research">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                 Refresh
               </button>
+
+              <!-- Delete Client -->
+              <button @click="deleteClient()" class="inline-flex items-center gap-1 text-[11px] border border-amber-300 text-amber-700 hover:bg-amber-50 px-2 py-1 rounded-md transition-colors bg-white" title="Remove as client. Company stays as prospect in other pipelines.">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 12H6"/></svg>
+                Remove client
+              </button>
+
+              <!-- Delete Everywhere -->
+              <button @click="deleteCompanyEverywhere()" class="inline-flex items-center gap-1 text-[11px] border border-red-300 text-red-700 hover:bg-red-50 px-2 py-1 rounded-md transition-colors bg-white font-medium" title="Nuclear: wipe this company from every pipeline, prospect record, and client record.">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M10 7V5a2 2 0 012-2h0a2 2 0 012 2v2"/></svg>
+                Delete everywhere
+              </button>
             </div>
-            <div x-text="activeClient?.description || 'No description'" class="line-clamp-2"></div>
+            <div x-text="activeClient?.description || 'No description'" class="line-clamp-2 pt-1"></div>
             <div class="text-gray-400">Buyer: <span x-text="activeClient?.target_buyer || '-'"></span></div>
           </div>
           <div x-show="promotingFromDropdown" class="mt-2 bg-blue-50 border border-blue-200 rounded-lg p-2 flex items-start gap-2">
@@ -180,7 +256,7 @@
         </div>
 
         <!-- LAYER 2: SOURCES -->
-        <div class="layer-card relative" @mouseenter="showLayerInfo('layer2', $event)" @mouseleave="hideLayerInfo()">
+        <div class="layer-card relative" data-tt="layer2">
           <div class="layer-label flex items-center gap-1">Layer 2: Data Sources <span class="text-gray-300 text-[10px] hover:text-blue-500">ⓘ</span></div>
           <div class="space-y-1.5">
             <template x-for="src in sources" :key="src.key">
@@ -194,7 +270,7 @@
         </div>
 
         <!-- LAYER 3: SCORING WEIGHTS -->
-        <div class="layer-card relative" @mouseenter="showLayerInfo('layer3', $event)" @mouseleave="hideLayerInfo()">
+        <div class="layer-card relative" data-tt="layer3">
           <div class="layer-label flex items-center gap-1">Layer 3: Scoring Weights <span class="text-gray-300 text-[10px] hover:text-blue-500">ⓘ</span></div>
           <div class="flex items-center gap-2 mb-3">
             <select x-model="weightPreset" @change="applyWeightPreset()" class="flex-1 border border-gray-300 rounded-lg px-2 py-1.5 text-xs bg-white">
@@ -252,13 +328,10 @@
               <div class="border rounded-lg overflow-hidden">
                 <!-- Group header -->
                 <div class="bg-gray-50 px-4 py-2 flex items-center justify-between cursor-pointer" @click="group._open = !group._open"
-                  @mouseenter="showTip(
-                    group.group_name === 'Market Fit' ? 'group_market' :
+                  :data-tt="group.group_name === 'Market Fit' ? 'group_market' :
                     group.group_name === 'Product & Technology' ? 'group_product' :
                     group.group_name === 'Business Dynamics' ? 'group_business' :
-                    group.group_name === 'Relationship & Timing' ? 'group_relationship' : null,
-                    $event)"
-                  @mouseleave="hideTip()">
+                    group.group_name === 'Relationship & Timing' ? 'group_relationship' : ''">
                   <div class="flex items-center gap-2">
                     <span class="text-sm font-semibold" x-text="group.group_name"></span>
                     <span class="text-xs text-gray-400" x-text="countActiveInGroup(group.group_name) + ' of ' + group.criteria.length + ' active'"></span>
@@ -272,8 +345,8 @@
                     <div class="rounded-lg p-2.5 border cursor-pointer transition-all relative group"
                       :class="isCriterionActive(lib.library_id) ? 'bg-blue-50 border-blue-300' : 'bg-white border-gray-200 opacity-60'"
                       @click="toggleLibraryCriterion(lib.library_id)"
-                      @mouseenter="showCriterionInfo(lib, group.group_name, $event)"
-                      @mouseleave="hideCriterionInfo()">
+                      data-tt="criterion"
+                      :data-tt-id="lib.library_id">
                       <div class="flex items-center gap-2 mb-1">
                         <div class="w-4 h-4 rounded border flex items-center justify-center text-xs"
                           :class="isCriterionActive(lib.library_id) ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-300'">
@@ -428,19 +501,19 @@
           <div class="text-2xl font-bold" x-text="summary.total">0</div>
           <div class="text-xs text-gray-500">Total</div>
         </button>
-        <button @click="filterTier = 'hot'; loadPipeline()" @mouseenter="showTip('tier_hot', $event)" @mouseleave="hideTip()" class="bg-white rounded-lg border p-3 text-center border-l-4 border-l-green-500 transition-all hover:shadow-md" :class="filterTier === 'hot' ? 'ring-2 ring-green-500 border-green-500' : ''">
+        <button @click="filterTier = 'hot'; loadPipeline()" data-tt="tier_hot" class="bg-white rounded-lg border p-3 text-center border-l-4 border-l-green-500 transition-all hover:shadow-md" :class="filterTier === 'hot' ? 'ring-2 ring-green-500 border-green-500' : ''">
           <div class="text-2xl font-bold text-green-700" x-text="summary.hot">0</div>
           <div class="text-xs text-gray-500">Hot</div>
         </button>
-        <button @click="filterTier = 'warm'; loadPipeline()" @mouseenter="showTip('tier_warm', $event)" @mouseleave="hideTip()" class="bg-white rounded-lg border p-3 text-center border-l-4 border-l-yellow-400 transition-all hover:shadow-md" :class="filterTier === 'warm' ? 'ring-2 ring-yellow-500 border-yellow-500' : ''">
+        <button @click="filterTier = 'warm'; loadPipeline()" data-tt="tier_warm" class="bg-white rounded-lg border p-3 text-center border-l-4 border-l-yellow-400 transition-all hover:shadow-md" :class="filterTier === 'warm' ? 'ring-2 ring-yellow-500 border-yellow-500' : ''">
           <div class="text-2xl font-bold text-yellow-700" x-text="summary.warm">0</div>
           <div class="text-xs text-gray-500">Warm</div>
         </button>
-        <button @click="filterTier = 'monitor'; loadPipeline()" @mouseenter="showTip('tier_monitor', $event)" @mouseleave="hideTip()" class="bg-white rounded-lg border p-3 text-center border-l-4 border-l-gray-400 transition-all hover:shadow-md" :class="filterTier === 'monitor' ? 'ring-2 ring-gray-500 border-gray-500' : ''">
+        <button @click="filterTier = 'monitor'; loadPipeline()" data-tt="tier_monitor" class="bg-white rounded-lg border p-3 text-center border-l-4 border-l-gray-400 transition-all hover:shadow-md" :class="filterTier === 'monitor' ? 'ring-2 ring-gray-500 border-gray-500' : ''">
           <div class="text-2xl font-bold text-gray-600" x-text="summary.monitor">0</div>
           <div class="text-xs text-gray-500">Monitor</div>
         </button>
-        <button @click="filterTier = 'pass'; loadPipeline()" @mouseenter="showTip('tier_pass', $event)" @mouseleave="hideTip()" class="bg-white rounded-lg border p-3 text-center border-l-4 border-l-red-400 transition-all hover:shadow-md" :class="filterTier === 'pass' ? 'ring-2 ring-red-500 border-red-500' : ''">
+        <button @click="filterTier = 'pass'; loadPipeline()" data-tt="tier_pass" class="bg-white rounded-lg border p-3 text-center border-l-4 border-l-red-400 transition-all hover:shadow-md" :class="filterTier === 'pass' ? 'ring-2 ring-red-500 border-red-500' : ''">
           <div class="text-2xl font-bold text-red-700" x-text="summary.pass_count">0</div>
           <div class="text-xs text-gray-500">Pass</div>
         </button>
@@ -448,7 +521,7 @@
           <div class="text-2xl font-bold text-gray-400" x-text="summary.unscored">0</div>
           <div class="text-xs text-gray-500">Unscored</div>
         </button>
-        <button @click="filterTier = 'filtered'; loadPipeline()" @mouseenter="showTip('tier_filtered', $event)" @mouseleave="hideTip()" class="bg-white rounded-lg border p-3 text-center border-l-4 border-l-gray-300 transition-all hover:shadow-md" :class="filterTier === 'filtered' ? 'ring-2 ring-gray-400 border-gray-400' : ''">
+        <button @click="filterTier = 'filtered'; loadPipeline()" data-tt="tier_filtered" class="bg-white rounded-lg border p-3 text-center border-l-4 border-l-gray-300 transition-all hover:shadow-md" :class="filterTier === 'filtered' ? 'ring-2 ring-gray-400 border-gray-400' : ''">
           <div class="text-2xl font-bold text-gray-400" x-text="summary.filtered || 0">0</div>
           <div class="text-xs text-gray-500">Filtered</div>
         </button>
@@ -523,22 +596,22 @@
           <thead class="bg-gray-50 border-b sticky top-0 z-10">
             <tr>
               <th class="px-2 py-2 text-center w-8"><input type="checkbox" @change="toggleSelectAll($event)" :checked="selectedEntries.length === filteredPipelineEntries().length && filteredPipelineEntries().length > 0" class="rounded" /></th>
-              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700" @click="toggleSort('name')" @mouseenter="showTip('col_company', $event)" @mouseleave="hideTip()">
+              <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700" @click="toggleSort('name')" data-tt="col_company">
                 <span>Company</span><span class="ml-1 text-blue-600" x-show="sortBy === 'name'" x-text="sortDir === 'desc' ? '↓' : '↑'"></span>
               </th>
-              <th x-show="columnVisibility.type" class="px-3 py-2 text-left text-xs font-medium text-gray-500" @mouseenter="showTip('col_type', $event)" @mouseleave="hideTip()">Type</th>
-              <th x-show="columnVisibility.pmf" class="px-3 py-2 text-center text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700" @click="toggleSort('pmf_score')" @mouseenter="showTip('col_pmf', $event)" @mouseleave="hideTip()">
+              <th x-show="columnVisibility.type" class="px-3 py-2 text-left text-xs font-medium text-gray-500" data-tt="col_type">Type</th>
+              <th x-show="columnVisibility.pmf" class="px-3 py-2 text-center text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700" @click="toggleSort('pmf_score')" data-tt="col_pmf">
                 <span>PMF</span><span class="ml-1 text-blue-600" x-show="sortBy === 'pmf_score'" x-text="sortDir === 'desc' ? '↓' : '↑'"></span>
               </th>
-              <th x-show="columnVisibility.rs" class="px-3 py-2 text-center text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700" @click="toggleSort('relationship_score')" @mouseenter="showTip('col_rs', $event)" @mouseleave="hideTip()">
+              <th x-show="columnVisibility.rs" class="px-3 py-2 text-center text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700" @click="toggleSort('relationship_score')" data-tt="col_rs">
                 <span>RS</span><span class="ml-1 text-blue-600" x-show="sortBy === 'relationship_score'" x-text="sortDir === 'desc' ? '↓' : '↑'"></span>
               </th>
-              <th x-show="columnVisibility.matchmaker" class="px-3 py-2 text-center text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700" @click="toggleSort('matchmaker_score')" @mouseenter="showTip('col_matchmaker', $event)" @mouseleave="hideTip()">
+              <th x-show="columnVisibility.matchmaker" class="px-3 py-2 text-center text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700" @click="toggleSort('matchmaker_score')" data-tt="col_matchmaker">
                 <span class="font-bold">Matchmaker</span><span class="ml-1 text-blue-600" x-show="sortBy === 'matchmaker_score'" x-text="sortDir === 'desc' ? '↓' : '↑'"></span>
               </th>
-              <th x-show="columnVisibility.fric" class="px-2 py-2 text-center text-xs font-medium text-gray-400" @mouseenter="showTip('col_fric', $event)" @mouseleave="hideTip()">Fric</th>
-              <th x-show="columnVisibility.intent" class="px-2 py-2 text-center text-xs font-medium text-gray-400" @mouseenter="showTip('col_intent', $event)" @mouseleave="hideTip()">Int</th>
-              <th x-show="columnVisibility.tier" class="px-3 py-2 text-center text-xs font-medium text-gray-500" @mouseenter="showTip('col_tier', $event)" @mouseleave="hideTip()">Tier</th>
+              <th x-show="columnVisibility.fric" class="px-2 py-2 text-center text-xs font-medium text-gray-400" data-tt="col_fric">Fric</th>
+              <th x-show="columnVisibility.intent" class="px-2 py-2 text-center text-xs font-medium text-gray-400" data-tt="col_intent">Int</th>
+              <th x-show="columnVisibility.tier" class="px-3 py-2 text-center text-xs font-medium text-gray-500" data-tt="col_tier">Tier</th>
               <th x-show="columnVisibility.best_contact" class="px-3 py-2 text-left text-xs font-medium text-gray-500">Best Contact</th>
               <th x-show="columnVisibility.status" class="px-3 py-2 text-left text-xs font-medium text-gray-500">Status</th>
               <th class="px-2 py-2 w-8"></th>
@@ -567,7 +640,9 @@
                 </td>
                 <td x-show="columnVisibility.fric" class="px-2 py-2 text-center cursor-pointer text-xs text-gray-400" @click="openDetail(entry)" x-text="entry.friction_coefficient != 1.0 ? entry.friction_coefficient : '-'"></td>
                 <td x-show="columnVisibility.intent" class="px-2 py-2 text-center cursor-pointer text-xs" @click="openDetail(entry)" :class="entry.intent_multiplier > 1.0 ? 'text-green-600' : entry.intent_multiplier < 1.0 ? 'text-red-400' : 'text-gray-400'" x-text="entry.intent_multiplier != 1.0 ? entry.intent_multiplier + 'x' : '-'"></td>
-                <td x-show="columnVisibility.tier" class="px-3 py-2 text-center cursor-pointer" @click="openDetail(entry)" @mouseenter="showTip('tier_' + (entry.tier || 'filtered'), $event)" @mouseleave="hideTip()"><span class="text-xs px-2 py-0.5 rounded-full font-medium" :class="'tier-' + entry.tier" x-text="entry.tier"></span></td>
+                <td x-show="columnVisibility.tier" class="px-3 py-2 text-center cursor-pointer" @click="openDetail(entry)" :data-tt="'tier_' + (entry.tier || 'filtered')">
+                  <span class="inline-block text-xs font-semibold px-2.5 py-1 rounded-md capitalize" :class="'tier-' + entry.tier" x-text="entry.tier"></span>
+                </td>
                 <td x-show="columnVisibility.best_contact" class="px-3 py-2 text-gray-600 text-xs cursor-pointer" x-text="entry.best_contact || '-'" @click="openDetail(entry)"></td>
                 <td x-show="columnVisibility.status" class="px-3 py-2 cursor-pointer" @click="openDetail(entry)"><span class="text-xs px-2 py-0.5 rounded"
                   :class="{
@@ -637,6 +712,28 @@
           <p class="text-xs text-gray-500 mt-1">Background jobs that keep the pipeline fresh without you driving them.</p>
         </div>
         <button @click="loadAgents()" class="text-xs border border-gray-300 px-3 py-1.5 rounded hover:bg-gray-50">Refresh</button>
+      </div>
+
+      <!-- Manual pipeline sync -->
+      <div class="bg-white rounded-lg border p-4 mb-4">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h3 class="text-sm font-semibold mb-1">Reconcile pipelines</h3>
+            <p class="text-xs text-gray-500">Ensure every client's pipeline contains every company in the system. Run this if Layer 1 and the pipeline list ever feel out of sync.</p>
+          </div>
+          <button @click="syncAllPipelines()" class="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 whitespace-nowrap flex-shrink-0" :disabled="syncingPipelines">
+            <span x-show="!syncingPipelines">Sync now</span>
+            <span x-show="syncingPipelines">Syncing...</span>
+          </button>
+        </div>
+        <div x-show="syncResult" class="mt-3 bg-gray-50 rounded p-3 text-xs">
+          <div class="font-semibold text-gray-800" x-text="'Added ' + (syncResult?.added || 0) + ' pipeline entries.'"></div>
+          <div x-show="Object.keys(syncResult?.per_client || {}).length > 0" class="mt-1 text-gray-600">
+            <template x-for="[client, count] in Object.entries(syncResult?.per_client || {})" :key="client">
+              <div><span x-text="client"></span>: +<span x-text="count"></span></div>
+            </template>
+          </div>
+        </div>
       </div>
 
       <!-- Ad-hoc HubSpot import -->
@@ -1409,94 +1506,53 @@
     <span x-text="toastMessage"></span>
   </div>
 
-  <!-- Generic Tip Popup (column headers, group headers, tier badges) -->
-  <div x-show="tipVisible && tip" x-cloak
-    :style="'position: fixed; top: ' + tipY + 'px; left: ' + tipX + 'px; z-index: 60; width: 300px;'"
+  <!-- Unified tooltip popup — ONE element, renders whatever the delegation
+       system puts in `tt.content`. Any element with data-tt="key" triggers. -->
+  <div x-show="tt.visible && tt.content" x-cloak
+    :style="'position: fixed; top: ' + tt.y + 'px; left: ' + tt.x + 'px; z-index: 60; width: 320px;'"
     class="bg-white border border-gray-300 rounded-lg shadow-2xl text-xs pointer-events-none">
-    <template x-if="tip">
+    <template x-if="tt.content">
       <div>
         <div class="px-3 py-2 border-b bg-blue-50">
-          <div class="font-bold text-sm text-gray-900" x-text="tip.title"></div>
+          <div class="font-bold text-sm text-gray-900" x-text="tt.content.title"></div>
+          <div x-show="tt.content.subtitle" class="text-[10px] uppercase tracking-wide text-blue-600 mt-0.5" x-text="tt.content.subtitle"></div>
         </div>
         <div class="p-3 space-y-2">
-          <div class="text-gray-700 leading-snug" x-text="tip.body"></div>
-          <div x-show="tip.scale && tip.scale.length" class="pt-2 border-t border-gray-200 space-y-0.5">
-            <template x-for="row in tip.scale || []" :key="row[0]">
+          <div x-show="tt.content.body" class="text-gray-700 leading-snug" x-text="tt.content.body"></div>
+          <div x-show="tt.content.what">
+            <div class="text-[10px] font-semibold text-gray-400 uppercase mb-1">What it does</div>
+            <div class="text-gray-700" x-text="tt.content.what"></div>
+          </div>
+          <div x-show="tt.content.why">
+            <div class="text-[10px] font-semibold text-gray-400 uppercase mb-1">Why it matters</div>
+            <div class="text-gray-700" x-text="tt.content.why"></div>
+          </div>
+          <div x-show="tt.content.how">
+            <div class="text-[10px] font-semibold text-gray-400 uppercase mb-1">How to use it</div>
+            <div class="text-gray-700" x-text="tt.content.how"></div>
+          </div>
+          <div x-show="tt.content.effect" class="pt-2 border-t">
+            <div class="text-[10px] font-semibold text-gray-400 uppercase mb-1">Effect on the score</div>
+            <div class="text-gray-700 italic" x-text="tt.content.effect"></div>
+          </div>
+          <div x-show="tt.content.scale && tt.content.scale.length" class="pt-2 border-t border-gray-200 space-y-0.5">
+            <template x-for="row in tt.content.scale || []" :key="row[0]">
               <div class="flex items-start gap-2 text-[11px]">
                 <span class="font-mono font-bold text-blue-600 w-12 flex-shrink-0" x-text="row[0]"></span>
                 <span class="text-gray-600" x-text="row[1]"></span>
               </div>
             </template>
           </div>
-        </div>
-      </div>
-    </template>
-  </div>
-
-  <!-- Layer Info Popup (hover over Layer 1/2/3 tiles) -->
-  <div x-show="layerInfoVisible && layerInfo" x-cloak
-    :style="'position: fixed; top: ' + layerInfoY + 'px; left: ' + layerInfoX + 'px; z-index: 60; width: 360px;'"
-    class="bg-white border border-gray-300 rounded-lg shadow-2xl text-xs pointer-events-none">
-    <template x-if="layerInfo">
-      <div>
-        <div class="px-3 py-2 border-b bg-blue-50">
-          <div class="font-bold text-sm text-gray-900" x-text="layerInfo.title"></div>
-          <div class="text-[10px] uppercase tracking-wide text-blue-600 mt-0.5" x-text="layerInfo.subtitle"></div>
-        </div>
-        <div class="p-3 space-y-2">
-          <div>
-            <div class="text-[10px] font-semibold text-gray-400 uppercase mb-1">What it does</div>
-            <div class="text-gray-700" x-text="layerInfo.what"></div>
-          </div>
-          <div>
-            <div class="text-[10px] font-semibold text-gray-400 uppercase mb-1">Why it matters</div>
-            <div class="text-gray-700" x-text="layerInfo.why"></div>
-          </div>
-          <div>
-            <div class="text-[10px] font-semibold text-gray-400 uppercase mb-1">How to use it</div>
-            <div class="text-gray-700" x-text="layerInfo.how"></div>
-          </div>
-          <div x-show="layerInfo.effect" class="pt-2 border-t">
-            <div class="text-[10px] font-semibold text-gray-400 uppercase mb-1">Effect on the score</div>
-            <div class="text-gray-700 italic" x-text="layerInfo.effect"></div>
-          </div>
-        </div>
-      </div>
-    </template>
-  </div>
-
-  <!-- Criterion Info Popup (hover over criteria tile) -->
-  <div x-show="criterionInfoVisible && criterionInfo" x-cloak
-    :style="'position: fixed; top: ' + criterionInfoY + 'px; left: ' + criterionInfoX + 'px; z-index: 60; width: 320px;'"
-    class="bg-white border border-gray-300 rounded-lg shadow-2xl text-xs pointer-events-none">
-    <template x-if="criterionInfo">
-      <div>
-        <div class="px-3 py-2 border-b bg-blue-50">
-          <div class="font-bold text-sm text-gray-900" x-text="criterionInfo.name"></div>
-          <div class="text-[10px] uppercase tracking-wide text-blue-600 mt-0.5" x-text="criterionInfo.group_name || ''"></div>
-        </div>
-        <div class="p-3 space-y-3">
-          <div>
-            <div class="text-[10px] font-semibold text-gray-400 uppercase mb-1">What it measures</div>
-            <div class="text-gray-700" x-text="criterionInfo.description"></div>
-          </div>
-          <div x-show="criterionInfo.why_it_matters">
-            <div class="text-[10px] font-semibold text-gray-400 uppercase mb-1">Why it matters</div>
-            <div class="text-gray-700" x-text="criterionInfo.why_it_matters"></div>
-          </div>
-          <div>
+          <div x-show="tt.content.scoreScale" class="pt-2 border-t">
             <div class="text-[10px] font-semibold text-gray-400 uppercase mb-1">How it's scored (0–5)</div>
             <div class="space-y-1 text-[11px]">
-              <div class="flex items-start gap-2"><span class="text-green-600 font-bold w-3">5</span><span class="text-gray-600">Clear, strong match on this dimension</span></div>
-              <div class="flex items-start gap-2"><span class="text-green-500 font-bold w-3">4</span><span class="text-gray-600">Mostly aligned with minor gaps</span></div>
-              <div class="flex items-start gap-2"><span class="text-yellow-600 font-bold w-3">3</span><span class="text-gray-600">Partial fit, some signal present</span></div>
-              <div class="flex items-start gap-2"><span class="text-amber-600 font-bold w-3">2</span><span class="text-gray-600">Weak fit, thin evidence</span></div>
-              <div class="flex items-start gap-2"><span class="text-red-500 font-bold w-3">1</span><span class="text-gray-600">Poor fit or contradicting evidence</span></div>
-              <div class="flex items-start gap-2"><span class="text-gray-400 font-bold w-3">0</span><span class="text-gray-600">No data or explicit mismatch</span></div>
+              <div class="flex items-start gap-2"><span class="text-green-600 font-bold w-3">5</span><span class="text-gray-600">Clear strong match</span></div>
+              <div class="flex items-start gap-2"><span class="text-green-500 font-bold w-3">4</span><span class="text-gray-600">Mostly aligned</span></div>
+              <div class="flex items-start gap-2"><span class="text-yellow-600 font-bold w-3">3</span><span class="text-gray-600">Partial fit</span></div>
+              <div class="flex items-start gap-2"><span class="text-amber-600 font-bold w-3">2</span><span class="text-gray-600">Weak fit</span></div>
+              <div class="flex items-start gap-2"><span class="text-red-500 font-bold w-3">1</span><span class="text-gray-600">Poor fit</span></div>
+              <div class="flex items-start gap-2"><span class="text-gray-400 font-bold w-3">0</span><span class="text-gray-600">No data</span></div>
             </div>
-          </div>
-          <div class="pt-2 border-t text-[10px] text-gray-400 italic">
-            Click to toggle this criterion on or off for the current lens. Weight controls how much it affects the final score.
           </div>
         </div>
       </div>

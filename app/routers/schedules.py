@@ -64,6 +64,57 @@ def run_now(job_key: str):
     return scheduler.run_job(job_key)
 
 
+@router.post("/sync-pipelines")
+def sync_all_pipelines(db: Session = Depends(get_db)):
+    """
+    Manual reconciliation: ensure every client's pipeline contains every prospect
+    in the system. Recovers from any drift between Layer 1 and pipeline lists.
+    """
+    from app.models import Prospect, Client, PipelineEntry
+    from app.routers.clients import _auto_score_pipeline
+
+    clients = db.query(Client).all()
+    prospects = db.query(Prospect).all()
+
+    total_added = 0
+    added_per_client = {}
+    for c in clients:
+        existing = set(r[0] for r in db.query(PipelineEntry.prospect_id).filter(
+            PipelineEntry.client_id == c.id
+        ).all())
+        count = 0
+        for p in prospects:
+            if p.name.lower() == c.name.lower():
+                continue
+            if p.id in existing:
+                continue
+            db.add(PipelineEntry(
+                client_id=c.id,
+                prospect_id=p.id,
+                source="Manual pipeline sync",
+            ))
+            count += 1
+        if count > 0:
+            added_per_client[c.name] = count
+            total_added += count
+
+    db.commit()
+
+    # Rescore active clients so newly-added rows get scores immediately
+    scored = {}
+    for c in clients:
+        if c.active:
+            scored[c.name] = _auto_score_pipeline(c.id, db)
+    db.commit()
+
+    return {
+        "status": "ok",
+        "added": total_added,
+        "per_client": added_per_client,
+        "scored": scored,
+    }
+
+
 # ---- Ad-hoc HubSpot import (hybrid path 2) ----
 
 from pydantic import BaseModel
@@ -117,7 +168,8 @@ def hubspot_import_query(req: HubSpotImportRequest, db: Session = Depends(get_db
     for c in db.query(Client).all():
         existing.add(normalize(c.name))
 
-    active_clients = db.query(Client).filter(Client.active == True).all()
+    all_clients = db.query(Client).all()
+    active_clients = [c for c in all_clients if c.active]
 
     added = []
     skipped = []
@@ -189,7 +241,8 @@ def hubspot_import_query(req: HubSpotImportRequest, db: Session = Depends(get_db
             except Exception:
                 pass
 
-        for cl in active_clients:
+        # Add to EVERY client's pipeline (not just active) so Layer 1 and pipelines stay in sync
+        for cl in all_clients:
             if cl.name.lower() == p.name.lower():
                 continue
             db.add(PipelineEntry(

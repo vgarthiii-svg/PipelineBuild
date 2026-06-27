@@ -13,6 +13,33 @@ from app.schemas import ProspectCreate, ProspectOut, BulkProspectCreate
 router = APIRouter(prefix="/api/prospects", tags=["prospects"])
 
 
+def _add_prospect_to_all_pipelines(prospect, db, source="Auto-added"):
+    """
+    Ensure this prospect appears in every client's pipeline (active or not).
+    Used by every prospect-creation path so Layer 1 and the pipeline never drift.
+    Skips clients where this prospect would be the client itself (by name match).
+    Returns count added.
+    """
+    clients = db.query(Client).all()
+    added = 0
+    for c in clients:
+        if c.name.lower() == prospect.name.lower():
+            continue
+        existing = db.query(PipelineEntry).filter(
+            PipelineEntry.client_id == c.id,
+            PipelineEntry.prospect_id == prospect.id,
+        ).first()
+        if existing:
+            continue
+        db.add(PipelineEntry(
+            client_id=c.id,
+            prospect_id=prospect.id,
+            source=source,
+        ))
+        added += 1
+    return added
+
+
 @router.delete("/{prospect_id}/cascade-everywhere")
 def delete_prospect_everywhere(prospect_id: int, db: Session = Depends(get_db)):
     """
@@ -99,6 +126,8 @@ def create_prospect(data: ProspectCreate, db: Session = Depends(get_db)):
         profile_generator.upsert_profile(prospect, db, run_enrichment=True)
     except Exception as e:
         print(f"[PROSPECTS] Profile generation failed: {e}")
+    # Sync: every new prospect must appear in every client's pipeline
+    _add_prospect_to_all_pipelines(prospect, db, source="Created via POST /api/prospects")
     db.commit()
     db.refresh(prospect)
     return prospect
@@ -127,6 +156,8 @@ def bulk_create_prospects(data: BulkProspectCreate, db: Session = Depends(get_db
             profile_generator.upsert_profile(prospect, db, run_enrichment=True)
         except Exception as e:
             print(f"[PROSPECTS] Profile generation failed for {name}: {e}")
+        # Sync to every client's pipeline
+        _add_prospect_to_all_pipelines(prospect, db, source="Bulk prospect create")
         created.append(prospect)
     db.commit()
     for p in created:
@@ -167,6 +198,9 @@ async def import_csv(file: UploadFile = File(...), db: Session = Depends(get_db)
             hq_state=row.get("hq_state"),
         )
         db.add(prospect)
+        db.flush()
+        # Sync to every client's pipeline
+        _add_prospect_to_all_pipelines(prospect, db, source="CSV import")
         imported += 1
 
     db.commit()

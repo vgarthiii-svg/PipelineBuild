@@ -167,7 +167,8 @@ def _job_nightly_hubspot_sync(db) -> dict:
     updated_prospects = []
     added_relationships = 0
 
-    active_clients = db.query(Client).filter(Client.active == True).all()
+    # Sync to ALL clients so Layer 1 and pipelines stay consistent
+    all_clients = db.query(Client).all()
 
     for company in recent.get("results", []):
         name = (company.get("name") or "").strip()
@@ -250,9 +251,9 @@ def _job_nightly_hubspot_sync(db) -> dict:
             except Exception as e:
                 log.exception("Failed to pull HubSpot contacts for %s", name)
 
-        # For NEW prospects: add to every active client's pipeline
+        # For NEW prospects: add to EVERY client's pipeline (active + inactive)
         if is_new:
-            for client in active_clients:
+            for client in all_clients:
                 if client.name.lower() == prospect.name.lower():
                     continue
                 already = db.query(PipelineEntry).filter(
