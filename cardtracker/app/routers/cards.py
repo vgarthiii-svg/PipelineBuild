@@ -3,6 +3,7 @@ import io
 import os
 import re
 import uuid
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
@@ -10,7 +11,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db, IMAGE_DIR
-from app.models import Card, VALID_STATUSES, STATUS_IN_STOCK
+from app.models import Card, VALID_STATUSES, STATUS_IN_STOCK, STATUS_SOLD
 from app.schemas import CardCreate, CardOut, CardUpdate, ExtractResult, UploadResult
 from app.vision import extract_card
 
@@ -46,24 +47,55 @@ def _next_card_id(db: Session) -> str:
     return f"INV-{_max_card_num(db) + 1:04d}"
 
 
-# CSV column header -> Card field, for inventory import (matches export.csv)
+# Column header (lowercased) -> Card field. Covers our own export plus common
+# marketplace/eBay sales-log headers (e.g. "Card", "Sold Price", "eBay Fees").
 _IMPORT_MAP = {
-    "player": "player", "year": "year", "brand": "brand",
+    # card identity / title
+    "player": "player", "card": "player", "card name": "player", "title": "player",
+    "description": "player", "card description": "player", "item": "player",
+    "year": "year", "brand": "brand",
     "set": "set_name", "set name": "set_name", "set_name": "set_name",
     "card #": "card_number", "card number": "card_number", "number": "card_number",
     "card_number": "card_number", "#": "card_number",
     "variation": "variation", "parallel": "variation",
     "team": "team", "sport": "sport", "rookie": "is_rookie", "condition": "condition",
-    "status": "status", "purchase date": "purchase_date",
+    "status": "status",
+    # dates
+    "date": "sale_date", "sale date": "sale_date", "purchase date": "purchase_date",
+    # cost basis
     "purchase source": "purchase_source", "purchased from": "purchase_source",
     "purchase price": "purchase_price", "cost": "purchase_price",
-    "sale date": "sale_date", "sale platform": "sale_platform", "sold on": "sale_platform",
-    "sale price": "sale_price", "sale fees": "sale_fees", "fees": "sale_fees",
-    "sale shipping": "sale_shipping", "shipping": "sale_shipping",
+    "inventory expense": "purchase_price", "cost basis": "purchase_price",
+    # sale
+    "sale platform": "sale_platform", "sold on": "sale_platform",
+    "sale price": "sale_price", "sold price": "sale_price",
+    "sale fees": "sale_fees", "fees": "sale_fees", "ebay fees": "sale_fees",
+    "sale shipping": "sale_shipping",
     "est. value": "estimated_value", "estimated value": "estimated_value",
-    "notes": "notes", "front image": "front_image", "back image": "back_image",
+    "notes": "notes", "ebay item id": "notes", "item id": "notes", "listing id": "notes",
+    "front image": "front_image", "back image": "back_image",
 }
 _FLOAT_FIELDS = {"purchase_price", "sale_price", "sale_fees", "sale_shipping", "estimated_value"}
+
+
+def _parse_money(val: str):
+    """Parse a money cell to a positive magnitude. Handles $, commas, and
+    accounting negatives like ($9.33). Returns None for blanks/dashes."""
+    s = re.sub(r"[,$()\s]", "", str(val)).replace("−", "")
+    if s in ("", "-", "—", "–"):
+        return None
+    try:
+        return abs(float(s))
+    except ValueError:
+        return None
+
+
+def _cell_str(v) -> str:
+    if v is None:
+        return ""
+    if isinstance(v, datetime) or isinstance(v, date):
+        return v.strftime("%m/%d/%Y")
+    return str(v)
 
 
 def _read_import_rows(upload: UploadFile) -> list:
@@ -75,7 +107,7 @@ def _read_import_rows(upload: UploadFile) -> list:
         wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
         rows = []
         for r in wb.active.iter_rows(values_only=True):
-            cells = ["" if c is None else str(c) for c in r]
+            cells = [_cell_str(c) for c in r]
             if any(c.strip() for c in cells):
                 rows.append(cells)
         wb.close()
@@ -106,17 +138,17 @@ def import_cards(file: UploadFile = File(...), db: Session = Depends(get_db)):
             if not val:
                 continue
             if field in _FLOAT_FIELDS:
-                try:
-                    data[field] = float(val.replace(",", "").replace("$", ""))
-                except ValueError:
-                    pass
+                money = _parse_money(val)
+                if money is not None:
+                    data[field] = money
             else:
                 data[field] = val
         if not any(data.get(k) for k in ("player", "year", "brand", "set_name", "card_number")):
             continue
         status = (data.pop("status", "") or "").lower().replace(" ", "_")
         if status not in VALID_STATUSES:
-            status = STATUS_IN_STOCK
+            # No status column: a row with a sale price is a sold card, else in stock.
+            status = STATUS_SOLD if data.get("sale_price") is not None else STATUS_IN_STOCK
         n += 1
         db.add(Card(card_id=f"INV-{n:04d}", status=status, **data))
         count += 1
