@@ -51,6 +51,7 @@
           <option value="listed">Listed</option>
           <option value="sold">Sold</option>
         </select>
+        <a class="btn btn-ghost" href="/api/cards/export.xlsx">⬇ Excel</a>
         <a class="btn btn-ghost" href="/api/cards/export.csv">⬇ CSV</a>
       </div>
       <div id="card-list" class="card-grid"></div>
@@ -78,10 +79,10 @@
 
         <div class="or-divider"><span>or</span></div>
         <div class="import-list">
-          <h3>Import a list (CSV)</h3>
-          <p class="muted">Already have a spreadsheet? Add many cards at once. Recognized columns include Player, Year, Brand, Set, Card #, Team, Sport, Condition, Status, Purchase Price and Sale Price. <a href="/api/cards/export.csv">Download a template</a>.</p>
-          <label class="btn btn-primary" id="add-import-label">⬆ Choose CSV file
-            <input type="file" accept=".csv,text/csv" id="add-import-input" hidden />
+          <h3>Import a list (Excel or CSV)</h3>
+          <p class="muted">Already have a spreadsheet? Add many cards at once from an <b>Excel (.xlsx)</b> or CSV file. Recognized columns include Player, Year, Brand, Set, Card #, Team, Sport, Condition, Status, Purchase Price and Sale Price. <a href="/api/cards/export.xlsx">Download an Excel template</a>.</p>
+          <label class="btn btn-primary" id="add-import-label">⬆ Choose file (Excel or CSV)
+            <input type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" id="add-import-input" hidden />
           </label>
           <p id="add-import-msg" class="muted"></p>
         </div>
@@ -148,9 +149,10 @@
       <div class="settings-card">
         <h3>Data</h3>
         <div class="settings-row">
-          <a class="btn btn-ghost" href="/api/cards/export.csv">⬇ Export inventory (CSV)</a>
-          <label class="btn btn-ghost" id="inv-import-label">⬆ Import inventory (CSV)
-            <input type="file" accept=".csv" id="inv-import-input" hidden />
+          <a class="btn btn-ghost" href="/api/cards/export.xlsx">⬇ Export (Excel)</a>
+          <a class="btn btn-ghost" href="/api/cards/export.csv">⬇ Export (CSV)</a>
+          <label class="btn btn-ghost" id="inv-import-label">⬆ Import (Excel or CSV)
+            <input type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" id="inv-import-input" hidden />
           </label>
         </div>
         <p class="muted">Import expects the same columns as the export (Player, Year, Brand, Set, Status, Purchase Price, Sale Price…).</p>

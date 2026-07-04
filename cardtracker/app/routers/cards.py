@@ -66,14 +66,31 @@ _IMPORT_MAP = {
 _FLOAT_FIELDS = {"purchase_price", "sale_price", "sale_fees", "sale_shipping", "estimated_value"}
 
 
+def _read_import_rows(upload: UploadFile) -> list:
+    """Return non-empty rows (lists of string cells) from a CSV or Excel (.xlsx) upload."""
+    raw = upload.file.read()
+    name = (upload.filename or "").lower()
+    if name.endswith(".xlsx") or raw[:4] == b"PK\x03\x04":  # xlsx is a zip (PK header)
+        from openpyxl import load_workbook
+        wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+        rows = []
+        for r in wb.active.iter_rows(values_only=True):
+            cells = ["" if c is None else str(c) for c in r]
+            if any(c.strip() for c in cells):
+                rows.append(cells)
+        wb.close()
+        return rows
+    text = raw.decode("utf-8-sig", errors="replace")
+    return [r for r in csv.reader(io.StringIO(text)) if any(c.strip() for c in r)]
+
+
 @router.post("/import")
 def import_cards(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    """Import inventory from a CSV (the same columns produced by export.csv)."""
-    text = file.file.read().decode("utf-8-sig", errors="replace")
-    rows = [r for r in csv.reader(io.StringIO(text)) if any(c.strip() for c in r)]
+    """Import inventory from a CSV or Excel (.xlsx) file (same columns as the export)."""
+    rows = _read_import_rows(file)
     if not rows:
         return {"imported": 0}
-    header = [h.strip().lower() for h in rows[0]]
+    header = [str(h).strip().lower() for h in rows[0]]
     cols = {i: _IMPORT_MAP[h] for i, h in enumerate(header) if h in _IMPORT_MAP}
     if not cols:
         raise HTTPException(status_code=400, detail="No recognizable columns found (need at least a Player column).")
@@ -200,38 +217,64 @@ def list_cards(
     return query.order_by(Card.id.desc()).all()
 
 
+_EXPORT_HEADERS = [
+    "Card ID", "Player", "Year", "Brand", "Set", "Card #", "Variation",
+    "Team", "Sport", "Rookie", "Condition", "Status",
+    "Purchase Date", "Purchase Source", "Purchase Price",
+    "Sale Date", "Sale Platform", "Sale Price", "Sale Fees", "Sale Shipping",
+    "Net Profit", "Est. Value", "Notes", "Front Image", "Back Image",
+]
+
+
+def _card_row(c: Card) -> list:
+    def num(v):
+        return v if v is not None else ""
+    return [
+        c.card_id, c.player, c.year, c.brand, c.set_name, c.card_number,
+        c.variation, c.team, c.sport, c.is_rookie, c.condition, c.status,
+        c.purchase_date, c.purchase_source, num(c.purchase_price),
+        c.sale_date, c.sale_platform, num(c.sale_price), num(c.sale_fees),
+        num(c.sale_shipping), num(c.net_profit), num(c.estimated_value),
+        c.notes, c.front_image, c.back_image,
+    ]
+
+
 @router.get("/export.csv")
 def export_csv(db: Session = Depends(get_db)):
     """Export the whole inventory as CSV (Google Sheets friendly)."""
     cards = db.query(Card).order_by(Card.card_id).all()
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow([
-        "Card ID", "Player", "Year", "Brand", "Set", "Card #", "Variation",
-        "Team", "Sport", "Rookie", "Condition", "Status",
-        "Purchase Date", "Purchase Source", "Purchase Price",
-        "Sale Date", "Sale Platform", "Sale Price", "Sale Fees", "Sale Shipping",
-        "Net Profit", "Est. Value", "Notes", "Front Image", "Back Image",
-    ])
+    writer.writerow(_EXPORT_HEADERS)
     for c in cards:
-        writer.writerow([
-            c.card_id, c.player, c.year, c.brand, c.set_name, c.card_number,
-            c.variation, c.team, c.sport, c.is_rookie, c.condition, c.status,
-            c.purchase_date, c.purchase_source,
-            c.purchase_price if c.purchase_price is not None else "",
-            c.sale_date, c.sale_platform,
-            c.sale_price if c.sale_price is not None else "",
-            c.sale_fees if c.sale_fees is not None else "",
-            c.sale_shipping if c.sale_shipping is not None else "",
-            c.net_profit if c.net_profit is not None else "",
-            c.estimated_value if c.estimated_value is not None else "",
-            c.notes, c.front_image, c.back_image,
-        ])
+        writer.writerow(_card_row(c))
     buf.seek(0)
     return StreamingResponse(
         iter([buf.getvalue()]),
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=card_inventory.csv"},
+    )
+
+
+@router.get("/export.xlsx")
+def export_xlsx(db: Session = Depends(get_db)):
+    """Export the whole inventory as an Excel .xlsx workbook (also serves as the import template)."""
+    from openpyxl import Workbook
+
+    cards = db.query(Card).order_by(Card.card_id).all()
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Inventory"
+    ws.append(_EXPORT_HEADERS)
+    for c in cards:
+        ws.append(_card_row(c))
+    bio = io.BytesIO()
+    wb.save(bio)
+    bio.seek(0)
+    return StreamingResponse(
+        iter([bio.getvalue()]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=card_inventory.xlsx"},
     )
 
 

@@ -126,7 +126,7 @@ async function importCsvFile(file, msgEl) {
     if (msgEl) msgEl.textContent = done; else alert(done);
     setTimeout(() => showView("inventory"), 700);
   } else {
-    const m = "⚠️ " + (res.detail || "Import failed. Check the file is a CSV with a Player column.");
+    const m = "⚠️ " + (res.detail || "Import failed. Check the file is an Excel (.xlsx) or CSV with a Player column.");
     if (msgEl) msgEl.textContent = m; else alert(m);
   }
 }
