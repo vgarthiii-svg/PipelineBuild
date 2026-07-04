@@ -71,6 +71,13 @@ main { max-width: 900px; margin: 0 auto; padding: 16px; }
 .recent-row .rec-player { flex: 1; font-size: 14px; }
 .recent-row .rec-val { font-weight: 600; }
 
+/* Add-screen CSV import */
+.or-divider { display: flex; align-items: center; gap: 12px; color: var(--muted); margin: 22px 0 16px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; }
+.or-divider::before, .or-divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.import-list { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px; }
+.import-list h3 { margin: 0 0 6px; font-size: 15px; }
+.import-list .btn { margin-top: 8px; }
+
 /* Settings */
 .settings-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
 .settings-card h3 { margin: 0 0 10px; font-size: 14px; }

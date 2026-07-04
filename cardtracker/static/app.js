@@ -113,16 +113,28 @@ $("#remove-logo").addEventListener("click", async () => {
   renderLogoPreview();
   applyBranding($("#set-app-name").value.trim() || "Card Tracker", "");
 });
-$("#inv-import-input").addEventListener("change", async (e) => {
-  const file = e.target.files[0];
+async function importCsvFile(file, msgEl) {
   if (!file) return;
-  e.target.value = "";
+  if (msgEl) msgEl.textContent = "Importing…";
   const fd = new FormData();
   fd.append("file", file);
   const r = await fetch("/api/cards/import", { method: "POST", body: fd });
   const res = await r.json().catch(() => ({}));
-  if (r.ok) { alert(`Imported ${res.imported} cards.`); showView("inventory"); }
-  else alert(res.detail || "Import failed.");
+  if (r.ok) {
+    const n = res.imported || 0;
+    const done = `✅ Imported ${n} card${n === 1 ? "" : "s"}.`;
+    if (msgEl) msgEl.textContent = done; else alert(done);
+    setTimeout(() => showView("inventory"), 700);
+  } else {
+    const m = "⚠️ " + (res.detail || "Import failed. Check the file is a CSV with a Player column.");
+    if (msgEl) msgEl.textContent = m; else alert(m);
+  }
+}
+$("#inv-import-input").addEventListener("change", (e) => {
+  const f = e.target.files[0]; e.target.value = ""; importCsvFile(f, null);
+});
+$("#add-import-input").addEventListener("change", (e) => {
+  const f = e.target.files[0]; e.target.value = ""; importCsvFile(f, $("#add-import-msg"));
 });
 $("#clear-cards").addEventListener("click", async () => {
   if (!confirm("Delete ALL cards from your inventory? This can't be undone.")) return;

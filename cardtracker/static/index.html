@@ -75,6 +75,16 @@
         <button id="camera-btn" type="button" class="btn btn-ghost">📷 Use camera (webcam)</button>
         <button id="scan-btn" class="btn btn-primary" disabled>Scan &amp; continue</button>
         <p id="scan-msg" class="muted"></p>
+
+        <div class="or-divider"><span>or</span></div>
+        <div class="import-list">
+          <h3>Import a list (CSV)</h3>
+          <p class="muted">Already have a spreadsheet? Add many cards at once. Recognized columns include Player, Year, Brand, Set, Card #, Team, Sport, Condition, Status, Purchase Price and Sale Price. <a href="/api/cards/export.csv">Download a template</a>.</p>
+          <label class="btn btn-primary" id="add-import-label">⬆ Choose CSV file
+            <input type="file" accept=".csv,text/csv" id="add-import-input" hidden />
+          </label>
+          <p id="add-import-msg" class="muted"></p>
+        </div>
       </div>
 
       <form id="review-form" class="review hidden">
