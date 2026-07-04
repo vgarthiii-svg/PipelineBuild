@@ -90,6 +90,106 @@ def _parse_money(val: str):
         return None
 
 
+# Best-effort extraction of a player name / year / brand from a freeform card
+# title like "2023 Panini Prizm Football PUKA NACUA Orange ... RC LA Rams".
+_TITLE_NOISE = set("""
+topps panini bowman leaf donruss fleer upper deck upperdeck score sage onyx
+gallery sapphire chrome prizm prizms select mosaic optic contenders absolute phoenix
+obsidian spectra immaculate national treasures heritage stadium club finest fire
+metal sports heroes garbage pail kids gpk series update concourse premier xrc
+prospects adios reactive
+refractor xfractor wave lime yellow green orange silver black red blue gold pink purple
+teal bronze snowflake winter lazer laser shock zebra cracked ice holo mirror
+golden emergent selections scripts huddle color match parallel insert rookie
+ticket patch auto autograph rc sp ssp sealed rare lot disco velocity hyper fast
+break mania downtown kaboom football basketball baseball hockey
+psa bgs sgc gem mint hof rpm cgc nfl mlb nba nhl mls team card of and the no with x na a b
+""".split())
+_TITLE_SUFFIX = {"jr", "sr", "ii", "iii", "iv", "v"}
+_TITLE_TEAMS = set("""
+braves tigers dodgers spurs browns packers rams jaguars bears cardinals angels
+mariners cavaliers grizzlies pelicans knicks lakers celtics warriors nuggets heat
+bucks suns kings clippers mavericks rockets jazz thunder timberwolves pistons
+pacers hawks hornets magic wizards raptors sixers blazers trailblazers
+yankees redsox mets phillies cubs whitesox reds brewers pirates nationals
+marlins astros rangers athletics twins royals guardians indians orioles bluejays
+rays diamondbacks dbacks padres giants rockies
+chiefs raiders broncos chargers bills dolphins patriots jets steelers ravens bengals
+titans colts texans vikings lions eagles cowboys commanders niners seahawks saints
+falcons panthers buccaneers bucs oilers flames canucks kraken sharks ducks avalanche
+detroit chicago boston green bay los angeles la new york san antonio francisco diego
+kansas city tampa
+""".split())
+_KNOWN_BRANDS = ["Topps", "Panini", "Bowman", "Leaf", "Donruss", "Fleer", "Upper Deck", "Score"]
+
+
+def _format_player(items: list) -> str:
+    out, seen = [], set()
+    for tc, lt in items:
+        if lt in seen:  # stop on a repeat, e.g. "Cam Schlittler, Cam Schlittler"
+            break
+        seen.add(lt)
+        if lt in _TITLE_SUFFIX:
+            out.append(lt.upper() if lt in {"ii", "iii", "iv", "v"} else lt.capitalize() + ".")
+        elif tc.isupper():
+            out.append(tc.capitalize())  # JAYDEN -> Jayden
+        else:
+            out.append(tc)               # preserve LaDainian / Jayden
+    return " ".join(out).strip()
+
+
+def _parse_card_title(desc: str) -> dict:
+    """Pull {player, year, brand} out of a freeform card description (best effort)."""
+    ym = re.search(r"\b(19|20)\d{2}\b", desc)
+    year = ym.group(0) if ym else ""
+    low = desc.lower()
+    brand = next((b for b in _KNOWN_BRANDS if b.lower() in low), "")
+    toks = []
+    for t in desc.replace(",", " ").split():
+        tc = t.strip().strip(".").strip("-")
+        if not tc or any(ch.isdigit() for ch in tc) or tc.startswith("#") or "/" in tc:
+            continue
+        lt = re.sub(r"[^a-z]", "", tc.lower())
+        if lt:
+            toks.append((tc, lt))
+    runs, cur = [], []
+    for tc, lt in toks:
+        if lt not in _TITLE_NOISE and lt not in _TITLE_TEAMS:
+            cur.append((tc, lt))
+        elif lt in _TITLE_SUFFIX and cur:
+            cur.append((tc, lt))
+        else:
+            if cur:
+                runs.append(cur)
+                cur = []
+    if cur:
+        runs.append(cur)
+    player = ""
+    for run in runs:
+        if len([1 for _, lt in run if lt not in _TITLE_SUFFIX]) >= 2:
+            player = _format_player(run[:4])
+            break
+    return {"player": player, "year": year, "brand": brand}
+
+
+def _enrich_from_title(data: dict):
+    """When a row's 'player' is really a full card title, split out player/year/brand."""
+    title = (data.get("player") or "").strip()
+    if not title or data.get("year"):
+        return
+    if len(title.split()) < 4 and not re.search(r"\b(19|20)\d{2}\b", title):
+        return  # short, real Player value (e.g. our own template) — leave it alone
+    parsed = _parse_card_title(title)
+    if parsed["player"]:
+        data["player"] = parsed["player"]
+        note = (data.get("notes") or "").strip()
+        data["notes"] = (note + " — " if note else "") + title  # keep the full original
+    if parsed["year"] and not data.get("year"):
+        data["year"] = parsed["year"]
+    if parsed["brand"] and not data.get("brand"):
+        data["brand"] = parsed["brand"]
+
+
 def _cell_str(v) -> str:
     if v is None:
         return ""
@@ -145,6 +245,7 @@ def import_cards(file: UploadFile = File(...), db: Session = Depends(get_db)):
                 data[field] = val
         if not any(data.get(k) for k in ("player", "year", "brand", "set_name", "card_number")):
             continue
+        _enrich_from_title(data)
         status = (data.pop("status", "") or "").lower().replace(" ", "_")
         if status not in VALID_STATUSES:
             # No status column: a row with a sale price is a sold card, else in stock.
