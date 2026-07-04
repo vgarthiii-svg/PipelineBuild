@@ -204,7 +204,14 @@ def _read_import_rows(upload: UploadFile) -> list:
     name = (upload.filename or "").lower()
     if name.endswith(".xlsx") or raw[:4] == b"PK\x03\x04":  # xlsx is a zip (PK header)
         from openpyxl import load_workbook
-        wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+        try:
+            wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail="Couldn't read that spreadsheet. If it's an Apple Numbers file, "
+                       "open it and choose File → Export To → Excel, then import the .xlsx.",
+            )
         rows = []
         for r in wb.active.iter_rows(values_only=True):
             cells = [_cell_str(c) for c in r]
@@ -218,18 +225,29 @@ def _read_import_rows(upload: UploadFile) -> list:
 
 @router.post("/import")
 def import_cards(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    """Import inventory from a CSV or Excel (.xlsx) file (same columns as the export)."""
+    """Import inventory from a CSV or Excel (.xlsx) file. Auto-detects the header
+    row, skipping any title/blank rows above it (common in eBay/marketplace exports)."""
     rows = _read_import_rows(file)
     if not rows:
         return {"imported": 0}
-    header = [str(h).strip().lower() for h in rows[0]]
-    cols = {i: _IMPORT_MAP[h] for i, h in enumerate(header) if h in _IMPORT_MAP}
+    # Find the header row: the first of the top rows that has >=2 known columns.
+    header_idx, cols = 0, {}
+    for idx in range(min(20, len(rows))):
+        hdr = [str(h).strip().lower() for h in rows[idx]]
+        candidate = {i: _IMPORT_MAP[h] for i, h in enumerate(hdr) if h in _IMPORT_MAP}
+        if len(candidate) >= 2:
+            header_idx, cols = idx, candidate
+            break
     if not cols:
-        raise HTTPException(status_code=400, detail="No recognizable columns found (need at least a Player column).")
+        raise HTTPException(
+            status_code=400,
+            detail="No recognizable columns found. Make sure the sheet has a header row "
+                   "with names like Card/Player, Sold Price, Inventory Expense, etc.",
+        )
 
     n = _max_card_num(db)
     count = 0
-    for row in rows[1:]:
+    for row in rows[header_idx + 1:]:
         data = {}
         for i, field in cols.items():
             if i >= len(row):
