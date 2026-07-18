@@ -1,7 +1,7 @@
 import csv
 import io
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
@@ -16,6 +16,7 @@ from app.schemas import (
     PipelineBulkCreate, PipelineSummary, CriterionScoreCreate, CriterionScoreOut,
 )
 from app.scoring import calculate_pmf, calculate_matchmaker, assign_tier
+from app.importers import ingest_pipeline_rows, import_decerto
 
 router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
 
@@ -231,6 +232,47 @@ def bulk_delete_pipeline(client_id: int, entry_ids: List[int], db: Session = Dep
 
     db.commit()
     return {"status": "removed", "count": len(removed), "companies": removed}
+
+
+@router.post("/import-decerto")
+def import_decerto_pipeline(db: Session = Depends(get_db)):
+    """Load the Decerto client + 52 scored carrier accounts from decerto_prospects.csv."""
+    try:
+        result = import_decerto(db)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {"status": "ok", "client": "Decerto", **result}
+
+
+@router.post("/{client_id}/import-csv")
+async def import_client_csv(
+    client_id: int,
+    file: UploadFile = File(...),
+    source: str = Form("CSV import"),
+    pmf_weight: float = Form(0.8),
+    rs_weight: float = Form(0.2),
+    db: Session = Depends(get_db),
+):
+    """
+    Import an enriched prospect sheet into a client's pipeline, scored and ranked.
+
+    Columns are auto-detected. Recognized headers include:
+    Company/Partner Name/name, Segment/Partner Type/type, HQ, Fit, Contact, Signal,
+    Outreach accelerant. A Fit column (1-5) drives the score; a WARM accelerant
+    lifts relationship strength.
+    """
+    client = db.query(Client).filter(Client.id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    text = (await file.read()).decode("utf-8")
+    rows = list(csv.DictReader(io.StringIO(text)))
+    try:
+        result = ingest_pipeline_rows(db, client, rows, source=source,
+                                      pmf_weight=pmf_weight, rs_weight=rs_weight)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"status": "ok", "client": client.name, **result}
 
 
 @router.post("/quick-add")
