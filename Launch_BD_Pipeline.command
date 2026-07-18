@@ -44,6 +44,10 @@ if ! "$PY" -c "import uvicorn" 2>/dev/null; then
   "$PY" -m pip install -r requirements.txt --quiet
 fi
 
+# --- Load / refresh the Decerto pipeline (idempotent, safe every launch) ---
+echo "Loading latest pipeline data..."
+"$PY" -m app.import_decerto || echo "(pipeline import skipped)"
+
 # --- Start the server in the background ---
 echo "Starting the app..."
 "$PY" -m uvicorn app.main:app --host 127.0.0.1 --port 8000 &
