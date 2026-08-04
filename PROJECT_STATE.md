@@ -222,10 +222,11 @@ Conference_name, attendee_name, title, company, city, state.
 | POST | /api/relationships/{prospect_id}/scan | Run 5-source scan |
 | GET | /api/relationships/scans/{prospect_id} | Scan history |
 
-### Intros (3 endpoints)
+### Intros (4 endpoints)
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | /api/intros/generate/{entry_id} | Generate intro package |
+| GET | /api/intros/drafts | Draft Tracker: all intro packages across pipelines (latest per entry) with client/prospect/tier context, filterable by status + client_id |
 | GET | /api/intros/{entry_id} | Get existing package |
 | PUT | /api/intros/{id} | Update/mark sent |
 
@@ -257,6 +258,9 @@ Grid of criteria cards with weight sliders (1-10), delete on hover, add new crit
 
 ### Pipeline Table
 Quick-add bar, Score All button, CSV export, tier filter buttons, select-all checkbox, per-row remove button, sortable columns (Company, PMF, RS, Matchmaker), tier badges (color-coded).
+
+### Draft Tracker View
+Nav view ("Drafts") listing every intro email across the pipeline with status summary tiles (All/Draft/Approved/Sent) that double as filters. Rows show prospect, client, contact, subject, tier, Matchmaker Score, status, and last-updated; clicking a row jumps to that pipeline entry's Intro tab. Scopes to the active client and refreshes on demand.
 
 ### Detail Slide Panel
 4 tabs (Scoring, Contacts, Intro, Activity). "Make Client" button for prospects not yet clients. "Remove" button. Intro generation with Claude or fallback template.

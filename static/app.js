@@ -36,6 +36,10 @@ function app() {
     pipelineEntries: [],
     summary: { total: 0, hot: 0, warm: 0, monitor: 0, pass_count: 0, unscored: 0 },
     activityLog: [],
+    drafts: [],
+    draftSummary: { total: 0, draft: 0, approved: 0, sent: 0 },
+    draftStatusFilter: '',
+    draftsLoading: false,
     scoring: false,
 
     // Criteria library
@@ -1097,6 +1101,44 @@ function app() {
       if (this.selectedClientId) url += `&client_id=${this.selectedClientId}`;
       const res = await fetch(url);
       this.activityLog = await res.json();
+    },
+
+    // ---- Draft Tracker ----
+
+    async loadDrafts() {
+      this.draftsLoading = true;
+      try {
+        const params = new URLSearchParams();
+        if (this.draftStatusFilter) params.set('status', this.draftStatusFilter);
+        if (this.selectedClientId) params.set('client_id', this.selectedClientId);
+        const qs = params.toString();
+        const res = await fetch(`${API}/api/intros/drafts${qs ? '?' + qs : ''}`);
+        if (!res.ok) { this.drafts = []; return; }
+        const data = await res.json();
+        this.drafts = data.items || [];
+        this.draftSummary = data.summary || { total: 0, draft: 0, approved: 0, sent: 0 };
+      } catch (e) {
+        this.drafts = [];
+      } finally {
+        this.draftsLoading = false;
+      }
+    },
+
+    setDraftFilter(status) {
+      this.draftStatusFilter = status;
+      this.loadDrafts();
+    },
+
+    async openDraft(draft) {
+      // Jump to the pipeline entry that owns this draft and open its Intro tab.
+      const entry = this.pipelineEntries.find(e => e.id === draft.pipeline_entry_id);
+      if (entry) {
+        this.view = 'pipeline';
+        await this.openDetail(entry);
+        this.detailTab = 'intro';
+      } else {
+        this.showToast('This draft belongs to another client’s pipeline. Switch clients to open it.');
+      }
     },
 
     // ---- Quick Add ----

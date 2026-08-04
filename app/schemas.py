@@ -220,6 +220,36 @@ class IntroPackageUpdate(BaseModel):
     status: Optional[str] = None
 
 
+class DraftTrackerItem(BaseModel):
+    """A single row in the Draft Tracker: one intro package with pipeline context."""
+    id: int
+    pipeline_entry_id: int
+    client_id: Optional[int] = None
+    client_name: Optional[str] = None
+    prospect_id: Optional[int] = None
+    prospect_name: Optional[str] = None
+    target_contact: Optional[str] = None
+    target_title: Optional[str] = None
+    email_subject: Optional[str] = None
+    status: str
+    tier: Optional[str] = None
+    matchmaker_score: Optional[float] = None
+    sent_date: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+
+
+class DraftTrackerSummary(BaseModel):
+    total: int
+    draft: int
+    approved: int
+    sent: int
+
+
+class DraftTrackerOut(BaseModel):
+    summary: DraftTrackerSummary
+    items: List[DraftTrackerItem]
+
+
 # ---- Activity ----
 
 class ActivityOut(BaseModel):
