@@ -297,6 +297,12 @@ class RankingsDeleteResult(BaseModel):
     deleted: int
 
 
+class RankingsRenameResult(BaseModel):
+    old_source: str
+    new_source: str
+    count: int
+
+
 # ---- Activity ----
 
 class ActivityOut(BaseModel):

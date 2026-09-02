@@ -19,6 +19,7 @@ from app.schemas import (
     RankingsImportResult,
     RankingSource,
     RankingsDeleteResult,
+    RankingsRenameResult,
 )
 from app.services import rankings_import
 
@@ -101,6 +102,34 @@ def list_sources(db: Session = Depends(get_db)):
         .all()
     )
     return [RankingSource(source=s, count=c) for s, c in rows]
+
+
+@router.put("/sources/{source}", response_model=RankingsRenameResult)
+def rename_source(source: str, new_name: str = Query(...), db: Session = Depends(get_db)):
+    """Rename a ranking source (relabels every player row under it)."""
+    new_name = (new_name or "").strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="New name cannot be empty.")
+
+    exists = db.query(PlayerRanking).filter(PlayerRanking.source == source).first()
+    if not exists:
+        raise HTTPException(status_code=404, detail="Source not found")
+
+    if new_name == source:
+        count = db.query(PlayerRanking).filter(PlayerRanking.source == source).count()
+        return RankingsRenameResult(old_source=source, new_source=new_name, count=count)
+
+    clash = db.query(PlayerRanking).filter(PlayerRanking.source == new_name).first()
+    if clash:
+        raise HTTPException(status_code=409, detail="A source with that name already exists.")
+
+    count = (
+        db.query(PlayerRanking)
+        .filter(PlayerRanking.source == source)
+        .update({PlayerRanking.source: new_name}, synchronize_session=False)
+    )
+    db.commit()
+    return RankingsRenameResult(old_source=source, new_source=new_name, count=count)
 
 
 @router.delete("/sources/{source}", response_model=RankingsDeleteResult)

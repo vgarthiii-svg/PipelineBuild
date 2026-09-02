@@ -44,7 +44,7 @@ function app() {
     rankings: [],
     rankingsMeta: { total: 0, positions: [], tiers: [], position_counts: {}, tier_counts: {} },
     rankSources: [],
-    rankSource: 'REDRAFT PPR',
+    rankSource: 'Mason Dodd PPR Redraft 2026',
     rankPosFilter: '',
     rankTierFilter: '',
     rankSearch: '',
@@ -1235,6 +1235,28 @@ function app() {
         this.uploadingRankings = false;
         input.value = '';  // allow re-uploading the same file
       }
+    },
+
+    async renameRankSource() {
+      if (!this.rankSource) return;
+      const newName = prompt('Rename this ranking source:', this.rankSource);
+      if (newName === null) return;                       // cancelled
+      const trimmed = newName.trim();
+      if (!trimmed || trimmed === this.rankSource) return; // no change
+      const res = await fetch(
+        `${API}/api/rankings/sources/${encodeURIComponent(this.rankSource)}?new_name=${encodeURIComponent(trimmed)}`,
+        { method: 'PUT' }
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        this.showToast('Rename failed: ' + (err.detail || res.status));
+        return;
+      }
+      const result = await res.json();
+      await this.loadRankingSources();
+      this.rankSource = result.new_source;
+      await this.changeRankSource();
+      this.showToast(`Renamed to "${result.new_source}".`);
     },
 
     async deleteRankSource() {

@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.models import PlayerRanking
 
-DEFAULT_SOURCE = "REDRAFT PPR"
+DEFAULT_SOURCE = "Mason Dodd PPR Redraft 2026"
 DEFAULT_CSV = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "ppr_redraft_rankings.csv",

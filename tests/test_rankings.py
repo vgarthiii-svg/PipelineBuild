@@ -1,6 +1,7 @@
 """
 PPR Draft Board: import, list/filter, meta, and player profile endpoints.
 """
+from app.services.rankings_import import DEFAULT_SOURCE
 
 
 class TestRankings:
@@ -11,7 +12,7 @@ class TestRankings:
 
     def test_import_loads_players(self, client):
         res = self._import(client)
-        assert res["source"] == "REDRAFT PPR"
+        assert res["source"] == DEFAULT_SOURCE
         assert res["total"] > 300
         assert res["imported"] == res["total"]
 
@@ -72,7 +73,7 @@ class TestRankings:
         self._import(client)
         sources = client.get("/api/rankings/sources").json()
         assert len(sources) == 1
-        assert sources[0]["source"] == "REDRAFT PPR"
+        assert sources[0]["source"] == DEFAULT_SOURCE
         assert sources[0]["count"] > 300
 
     def test_upload_csv_creates_named_source(self, client):
@@ -115,7 +116,7 @@ class TestRankings:
         assert r.status_code == 400
 
     def test_delete_source_removes_only_that_source(self, client):
-        self._import(client)  # REDRAFT PPR
+        self._import(client)  # default source
         client.post("/api/rankings/import?source=Doomed").json()
         # Delete the extra source
         d = client.delete("/api/rankings/sources/Doomed")
@@ -125,12 +126,44 @@ class TestRankings:
         # It's gone; the default source is untouched
         sources = {s["source"] for s in client.get("/api/rankings/sources").json()}
         assert "Doomed" not in sources
-        assert "REDRAFT PPR" in sources
+        assert DEFAULT_SOURCE in sources
         assert client.get("/api/rankings?source=Doomed").json() == []
 
     def test_delete_missing_source_404(self, client):
         self._import(client)
         assert client.delete("/api/rankings/sources/Nope").status_code == 404
+
+    def test_rename_source(self, client):
+        base = self._import(client)
+        r = client.put(
+            f"/api/rankings/sources/{DEFAULT_SOURCE}",
+            params={"new_name": "My Custom Board"},
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["old_source"] == DEFAULT_SOURCE
+        assert body["new_source"] == "My Custom Board"
+        assert body["count"] == base["total"]
+        # Old name gone, new name carries all the players
+        sources = {s["source"]: s["count"] for s in client.get("/api/rankings/sources").json()}
+        assert DEFAULT_SOURCE not in sources
+        assert sources["My Custom Board"] == base["total"]
+
+    def test_rename_missing_source_404(self, client):
+        self._import(client)
+        r = client.put("/api/rankings/sources/Nope", params={"new_name": "X"})
+        assert r.status_code == 404
+
+    def test_rename_empty_name_400(self, client):
+        self._import(client)
+        r = client.put(f"/api/rankings/sources/{DEFAULT_SOURCE}", params={"new_name": "  "})
+        assert r.status_code == 400
+
+    def test_rename_collision_409(self, client):
+        self._import(client)
+        client.post("/api/rankings/import?source=Other").json()
+        r = client.put(f"/api/rankings/sources/{DEFAULT_SOURCE}", params={"new_name": "Other"})
+        assert r.status_code == 409
 
     def test_multiple_sources_are_isolated(self, client):
         # Default source
@@ -140,7 +173,7 @@ class TestRankings:
         assert custom["source"] == "Custom Board"
 
         sources = {s["source"]: s["count"] for s in client.get("/api/rankings/sources").json()}
-        assert "REDRAFT PPR" in sources and "Custom Board" in sources
+        assert DEFAULT_SOURCE in sources and "Custom Board" in sources
 
         # Listing/meta are scoped per source and don't bleed across sources
         only_custom = client.get("/api/rankings?source=Custom Board&limit=1000").json()
