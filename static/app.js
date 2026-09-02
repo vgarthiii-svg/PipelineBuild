@@ -40,6 +40,17 @@ function app() {
     draftSummary: { total: 0, draft: 0, approved: 0, sent: 0 },
     draftStatusFilter: '',
     draftsLoading: false,
+    // ---- PPR Draft Board (fantasy) ----
+    rankings: [],
+    rankingsMeta: { total: 0, positions: [], tiers: [], position_counts: {}, tier_counts: {} },
+    rankSources: [],
+    rankSource: 'REDRAFT PPR',
+    rankPosFilter: '',
+    rankTierFilter: '',
+    rankSearch: '',
+    rankingsLoading: false,
+    selectedPlayer: null,
+    _rankSearchTimer: null,
     scoring: false,
 
     // Criteria library
@@ -1139,6 +1150,91 @@ function app() {
       } else {
         this.showToast('This draft belongs to another client’s pipeline. Switch clients to open it.');
       }
+    },
+
+    // ---- PPR Draft Board (fantasy football rankings) ----
+
+    async loadRankingSources() {
+      const res = await fetch(`${API}/api/rankings/sources`);
+      if (!res.ok) return;
+      this.rankSources = await res.json();
+      // Keep the selected source valid; fall back to the first available.
+      if (this.rankSources.length && !this.rankSources.some(s => s.source === this.rankSource)) {
+        this.rankSource = this.rankSources[0].source;
+      }
+    },
+
+    async loadRankingsMeta() {
+      const res = await fetch(`${API}/api/rankings/meta?source=${encodeURIComponent(this.rankSource)}`);
+      if (res.ok) this.rankingsMeta = await res.json();
+    },
+
+    async loadRankings() {
+      this.rankingsLoading = true;
+      try {
+        const params = new URLSearchParams();
+        params.set('source', this.rankSource);
+        if (this.rankPosFilter) params.set('position', this.rankPosFilter);
+        if (this.rankTierFilter) params.set('tier', this.rankTierFilter);
+        if (this.rankSearch.trim()) params.set('q', this.rankSearch.trim());
+        const res = await fetch(`${API}/api/rankings?${params.toString()}`);
+        this.rankings = res.ok ? await res.json() : [];
+      } catch (e) {
+        this.rankings = [];
+      } finally {
+        this.rankingsLoading = false;
+      }
+    },
+
+    async openRankings() {
+      this.view = 'rankings';
+      await this.loadRankingSources();
+      await this.loadRankingsMeta();
+      await this.loadRankings();
+    },
+
+    async changeRankSource() {
+      // Picking a different source resets filters and reloads that file's data.
+      this.rankPosFilter = '';
+      this.rankTierFilter = '';
+      this.rankSearch = '';
+      this.selectedPlayer = null;
+      await this.loadRankingsMeta();
+      await this.loadRankings();
+    },
+
+    setRankPos(pos) {
+      this.rankPosFilter = this.rankPosFilter === pos ? '' : pos;
+      this.loadRankings();
+    },
+
+    setRankTier(tier) {
+      this.rankTierFilter = tier;
+      this.loadRankings();
+    },
+
+    onRankSearch() {
+      clearTimeout(this._rankSearchTimer);
+      this._rankSearchTimer = setTimeout(() => this.loadRankings(), 250);
+    },
+
+    async openPlayer(player) {
+      // Pull the full player + ranking profile on click.
+      if (player.player_id == null) { this.selectedPlayer = player; return; }
+      const res = await fetch(`${API}/api/rankings/${player.player_id}?source=${encodeURIComponent(this.rankSource)}`);
+      this.selectedPlayer = res.ok ? await res.json() : player;
+    },
+
+    closePlayer() { this.selectedPlayer = null; },
+
+    posBadgeClass(pos) {
+      return {
+        'bg-emerald-100 text-emerald-700': pos === 'RB',
+        'bg-sky-100 text-sky-700': pos === 'WR',
+        'bg-orange-100 text-orange-700': pos === 'TE',
+        'bg-purple-100 text-purple-700': pos === 'QB',
+        'bg-gray-100 text-gray-600': !['RB','WR','TE','QB'].includes(pos),
+      };
     },
 
     // ---- Quick Add ----

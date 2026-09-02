@@ -250,6 +250,48 @@ class DraftTrackerOut(BaseModel):
     items: List[DraftTrackerItem]
 
 
+# ---- PPR Draft Rankings (fantasy football) ----
+
+class PlayerRankingOut(BaseModel):
+    id: int
+    source: str
+    player_id: Optional[int] = None
+    rank: Optional[int] = None
+    name: str
+    team: Optional[str] = None
+    position: Optional[str] = None
+    position_rank: Optional[int] = None      # rank within position (e.g. RB4), computed
+    tier: Optional[str] = None
+    mason_dodd_rank: Optional[int] = None
+    expert_rank: Optional[float] = None
+    value_delta: Optional[float] = None       # expert_rank - rank (positive = value pick)
+
+    class Config:
+        from_attributes = True
+
+
+class RankingsMeta(BaseModel):
+    source: str
+    total: int
+    positions: List[str]
+    tiers: List[str]
+    teams: List[str]
+    position_counts: dict
+    tier_counts: dict
+
+
+class RankingsImportResult(BaseModel):
+    source: str
+    imported: int
+    updated: int
+    total: int
+
+
+class RankingSource(BaseModel):
+    source: str
+    count: int
+
+
 # ---- Activity ----
 
 class ActivityOut(BaseModel):

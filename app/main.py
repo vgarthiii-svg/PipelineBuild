@@ -24,6 +24,7 @@ from app.services import backup as backup_service
 
 from app.routers import clients, prospects, pipeline, relationships, intros, activity
 from app.routers import behavior, intent, filters, notifications, profiles, schedules
+from app.routers import rankings
 
 log = logging.getLogger("bd_pipeline")
 
@@ -60,6 +61,7 @@ app.include_router(filters.router)
 app.include_router(notifications.router)
 app.include_router(profiles.router)
 app.include_router(schedules.router)
+app.include_router(rankings.router)
 
 # Serve static files (dashboard)
 static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
@@ -112,6 +114,9 @@ def startup():
     db = SessionLocal()
     try:
         seed_database(db)
+        # Seed fantasy PPR rankings from the bundled CSV (first run only)
+        from app.services import rankings_import
+        rankings_import.seed_rankings(db)
     finally:
         db.close()
     # Start nightly backup loop
