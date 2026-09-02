@@ -220,6 +220,89 @@ class IntroPackageUpdate(BaseModel):
     status: Optional[str] = None
 
 
+class DraftTrackerItem(BaseModel):
+    """A single row in the Draft Tracker: one intro package with pipeline context."""
+    id: int
+    pipeline_entry_id: int
+    client_id: Optional[int] = None
+    client_name: Optional[str] = None
+    prospect_id: Optional[int] = None
+    prospect_name: Optional[str] = None
+    target_contact: Optional[str] = None
+    target_title: Optional[str] = None
+    email_subject: Optional[str] = None
+    status: str
+    tier: Optional[str] = None
+    matchmaker_score: Optional[float] = None
+    sent_date: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+
+
+class DraftTrackerSummary(BaseModel):
+    total: int
+    draft: int
+    approved: int
+    sent: int
+
+
+class DraftTrackerOut(BaseModel):
+    summary: DraftTrackerSummary
+    items: List[DraftTrackerItem]
+
+
+# ---- PPR Draft Rankings (fantasy football) ----
+
+class PlayerRankingOut(BaseModel):
+    id: int
+    source: str
+    player_id: Optional[int] = None
+    rank: Optional[int] = None
+    name: str
+    team: Optional[str] = None
+    position: Optional[str] = None
+    position_rank: Optional[int] = None      # rank within position (e.g. RB4), computed
+    tier: Optional[str] = None
+    mason_dodd_rank: Optional[int] = None
+    expert_rank: Optional[float] = None
+    value_delta: Optional[float] = None       # expert_rank - rank (positive = value pick)
+
+    class Config:
+        from_attributes = True
+
+
+class RankingsMeta(BaseModel):
+    source: str
+    total: int
+    positions: List[str]
+    tiers: List[str]
+    teams: List[str]
+    position_counts: dict
+    tier_counts: dict
+
+
+class RankingsImportResult(BaseModel):
+    source: str
+    imported: int
+    updated: int
+    total: int
+
+
+class RankingSource(BaseModel):
+    source: str
+    count: int
+
+
+class RankingsDeleteResult(BaseModel):
+    source: str
+    deleted: int
+
+
+class RankingsRenameResult(BaseModel):
+    old_source: str
+    new_source: str
+    count: int
+
+
 # ---- Activity ----
 
 class ActivityOut(BaseModel):

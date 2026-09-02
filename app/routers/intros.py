@@ -4,9 +4,17 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from typing import List, Optional
+
 from app.database import get_db
 from app.models import IntroPackage, PipelineEntry, Prospect, Client, Relationship, ActivityLog
-from app.schemas import IntroPackageOut, IntroPackageUpdate
+from app.schemas import (
+    IntroPackageOut,
+    IntroPackageUpdate,
+    DraftTrackerItem,
+    DraftTrackerSummary,
+    DraftTrackerOut,
+)
 
 router = APIRouter(prefix="/api/intros", tags=["intros"])
 
@@ -161,6 +169,96 @@ def _fallback_package(prospect, client, contact_name, contact_title, warmest_pat
             {"objection": "Not a priority right now", "response": "Fair enough. Can I send over a one-pager so it's on your radar when timing is better?"},
         ],
     }
+
+
+@router.get("/drafts", response_model=DraftTrackerOut)
+def list_drafts(
+    status: Optional[str] = None,
+    client_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Draft Tracker: every intro package across the pipeline, enriched with the
+    client/prospect it belongs to and the entry's tier + Matchmaker Score.
+
+    Shows the latest package per pipeline entry (regeneration creates a new row,
+    so we keep only the most recent to avoid duplicate tracker rows).
+    Optional filters: `status` (draft/approved/sent) and `client_id`.
+    """
+    packages = (
+        db.query(IntroPackage)
+        .order_by(IntroPackage.created_at.desc())
+        .all()
+    )
+
+    # Cache lookups so we don't re-query the same entry/prospect/client repeatedly.
+    entry_cache: dict = {}
+    prospect_cache: dict = {}
+    client_cache: dict = {}
+
+    def _entry(eid):
+        if eid not in entry_cache:
+            entry_cache[eid] = db.query(PipelineEntry).filter(PipelineEntry.id == eid).first()
+        return entry_cache[eid]
+
+    def _prospect(pid):
+        if pid not in prospect_cache:
+            prospect_cache[pid] = db.query(Prospect).filter(Prospect.id == pid).first()
+        return prospect_cache[pid]
+
+    def _client(cid):
+        if cid not in client_cache:
+            client_cache[cid] = db.query(Client).filter(Client.id == cid).first()
+        return client_cache[cid]
+
+    items: List[DraftTrackerItem] = []
+    seen_entries = set()
+    counts = {"draft": 0, "approved": 0, "sent": 0}
+
+    for pkg in packages:
+        # Keep only the newest package per pipeline entry.
+        if pkg.pipeline_entry_id in seen_entries:
+            continue
+        seen_entries.add(pkg.pipeline_entry_id)
+
+        entry = _entry(pkg.pipeline_entry_id)
+        prospect = _prospect(entry.prospect_id) if entry else None
+        client = _client(entry.client_id) if entry else None
+
+        if client_id and (not entry or entry.client_id != client_id):
+            continue
+
+        pkg_status = pkg.status or "draft"
+        if pkg_status in counts:
+            counts[pkg_status] += 1
+
+        if status and pkg_status != status:
+            continue
+
+        items.append(DraftTrackerItem(
+            id=pkg.id,
+            pipeline_entry_id=pkg.pipeline_entry_id,
+            client_id=entry.client_id if entry else None,
+            client_name=client.name if client else None,
+            prospect_id=entry.prospect_id if entry else None,
+            prospect_name=prospect.name if prospect else None,
+            target_contact=pkg.target_contact,
+            target_title=pkg.target_title,
+            email_subject=pkg.email_subject,
+            status=pkg_status,
+            tier=entry.tier if entry else None,
+            matchmaker_score=entry.matchmaker_score if entry else None,
+            sent_date=pkg.sent_date,
+            created_at=pkg.created_at,
+        ))
+
+    summary = DraftTrackerSummary(
+        total=counts["draft"] + counts["approved"] + counts["sent"],
+        draft=counts["draft"],
+        approved=counts["approved"],
+        sent=counts["sent"],
+    )
+    return DraftTrackerOut(summary=summary, items=items)
 
 
 @router.get("/{entry_id}", response_model=IntroPackageOut)

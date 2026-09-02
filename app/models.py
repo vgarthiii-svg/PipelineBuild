@@ -399,3 +399,29 @@ class ScheduledJob(Base):
     next_run = Column(DateTime)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ============ Fantasy Football: PPR Draft Rankings ============
+
+
+class PlayerRanking(Base):
+    """
+    A fantasy-football player row imported from a rankings CSV. Powers the
+    PPR Draft Board: filterable by position/tier and click-through to a
+    full player profile. `source` lets multiple ranking sets coexist.
+    """
+    __tablename__ = "player_rankings"
+    __table_args__ = (UniqueConstraint("source", "player_id", name="uq_source_player"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    source = Column(String, nullable=False, default="REDRAFT PPR", index=True)
+    player_id = Column(Integer, index=True)      # external id from the source file
+    rank = Column(Integer, index=True)           # overall rank in this source
+    name = Column(String, nullable=False, index=True)
+    team = Column(String)                        # may be blank (free agent)
+    position = Column(String, index=True)        # QB/RB/WR/TE
+    tier = Column(String, index=True)            # S/A/B/... letter tier
+    mason_dodd_rank = Column(Integer)            # nullable ('-' in source)
+    expert_rank = Column(Float)                  # consensus/expert rank, nullable
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

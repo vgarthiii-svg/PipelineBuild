@@ -36,6 +36,22 @@ function app() {
     pipelineEntries: [],
     summary: { total: 0, hot: 0, warm: 0, monitor: 0, pass_count: 0, unscored: 0 },
     activityLog: [],
+    drafts: [],
+    draftSummary: { total: 0, draft: 0, approved: 0, sent: 0 },
+    draftStatusFilter: '',
+    draftsLoading: false,
+    // ---- PPR Draft Board (fantasy) ----
+    rankings: [],
+    rankingsMeta: { total: 0, positions: [], tiers: [], position_counts: {}, tier_counts: {} },
+    rankSources: [],
+    rankSource: 'Mason Dodd PPR Redraft 2026',
+    rankPosFilter: '',
+    rankTierFilter: '',
+    rankSearch: '',
+    rankingsLoading: false,
+    uploadingRankings: false,
+    selectedPlayer: null,
+    _rankSearchTimer: null,
     scoring: false,
 
     // Criteria library
@@ -1097,6 +1113,206 @@ function app() {
       if (this.selectedClientId) url += `&client_id=${this.selectedClientId}`;
       const res = await fetch(url);
       this.activityLog = await res.json();
+    },
+
+    // ---- Draft Tracker ----
+
+    async loadDrafts() {
+      this.draftsLoading = true;
+      try {
+        const params = new URLSearchParams();
+        if (this.draftStatusFilter) params.set('status', this.draftStatusFilter);
+        if (this.selectedClientId) params.set('client_id', this.selectedClientId);
+        const qs = params.toString();
+        const res = await fetch(`${API}/api/intros/drafts${qs ? '?' + qs : ''}`);
+        if (!res.ok) { this.drafts = []; return; }
+        const data = await res.json();
+        this.drafts = data.items || [];
+        this.draftSummary = data.summary || { total: 0, draft: 0, approved: 0, sent: 0 };
+      } catch (e) {
+        this.drafts = [];
+      } finally {
+        this.draftsLoading = false;
+      }
+    },
+
+    setDraftFilter(status) {
+      this.draftStatusFilter = status;
+      this.loadDrafts();
+    },
+
+    async openDraft(draft) {
+      // Jump to the pipeline entry that owns this draft and open its Intro tab.
+      const entry = this.pipelineEntries.find(e => e.id === draft.pipeline_entry_id);
+      if (entry) {
+        this.view = 'pipeline';
+        await this.openDetail(entry);
+        this.detailTab = 'intro';
+      } else {
+        this.showToast('This draft belongs to another client’s pipeline. Switch clients to open it.');
+      }
+    },
+
+    // ---- PPR Draft Board (fantasy football rankings) ----
+
+    async loadRankingSources() {
+      const res = await fetch(`${API}/api/rankings/sources`);
+      if (!res.ok) return;
+      this.rankSources = await res.json();
+      // Keep the selected source valid; fall back to the first available.
+      if (this.rankSources.length && !this.rankSources.some(s => s.source === this.rankSource)) {
+        this.rankSource = this.rankSources[0].source;
+      }
+    },
+
+    async loadRankingsMeta() {
+      const res = await fetch(`${API}/api/rankings/meta?source=${encodeURIComponent(this.rankSource)}`);
+      if (res.ok) this.rankingsMeta = await res.json();
+    },
+
+    async loadRankings() {
+      this.rankingsLoading = true;
+      try {
+        const params = new URLSearchParams();
+        params.set('source', this.rankSource);
+        if (this.rankPosFilter) params.set('position', this.rankPosFilter);
+        if (this.rankTierFilter) params.set('tier', this.rankTierFilter);
+        if (this.rankSearch.trim()) params.set('q', this.rankSearch.trim());
+        const res = await fetch(`${API}/api/rankings?${params.toString()}`);
+        this.rankings = res.ok ? await res.json() : [];
+      } catch (e) {
+        this.rankings = [];
+      } finally {
+        this.rankingsLoading = false;
+      }
+    },
+
+    async openRankings() {
+      this.view = 'rankings';
+      await this.loadRankingSources();
+      await this.loadRankingsMeta();
+      await this.loadRankings();
+    },
+
+    async changeRankSource() {
+      // Picking a different source resets filters and reloads that file's data.
+      this.rankPosFilter = '';
+      this.rankTierFilter = '';
+      this.rankSearch = '';
+      this.selectedPlayer = null;
+      await this.loadRankingsMeta();
+      await this.loadRankings();
+    },
+
+    async uploadRankingsFile(event) {
+      const input = event.target;
+      const f = input.files && input.files[0];
+      if (!f) return;
+      // Optional custom source name; default is the file name (server derives it).
+      const name = prompt('Name this ranking source:', f.name.replace(/\.[^.]+$/, ''));
+      if (name === null) { input.value = ''; return; }  // cancelled
+
+      this.uploadingRankings = true;
+      try {
+        const fd = new FormData();
+        fd.append('file', f);
+        if (name.trim()) fd.append('source', name.trim());
+        const res = await fetch(`${API}/api/rankings/upload`, { method: 'POST', body: fd });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          this.showToast('Upload failed: ' + (err.detail || res.status));
+          return;
+        }
+        const result = await res.json();
+        // Make the newly uploaded file the active source and show it.
+        await this.loadRankingSources();
+        this.rankSource = result.source;
+        await this.changeRankSource();
+        this.showToast(`Imported ${result.total} players into "${result.source}".`);
+      } catch (e) {
+        this.showToast('Upload failed. Check the file and try again.');
+      } finally {
+        this.uploadingRankings = false;
+        input.value = '';  // allow re-uploading the same file
+      }
+    },
+
+    async renameRankSource() {
+      if (!this.rankSource) return;
+      const newName = prompt('Rename this ranking source:', this.rankSource);
+      if (newName === null) return;                       // cancelled
+      const trimmed = newName.trim();
+      if (!trimmed || trimmed === this.rankSource) return; // no change
+      const res = await fetch(
+        `${API}/api/rankings/sources/${encodeURIComponent(this.rankSource)}?new_name=${encodeURIComponent(trimmed)}`,
+        { method: 'PUT' }
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        this.showToast('Rename failed: ' + (err.detail || res.status));
+        return;
+      }
+      const result = await res.json();
+      await this.loadRankingSources();
+      this.rankSource = result.new_source;
+      await this.changeRankSource();
+      this.showToast(`Renamed to "${result.new_source}".`);
+    },
+
+    async deleteRankSource() {
+      if (!this.rankSource) return;
+      const cur = this.rankSources.find(s => s.source === this.rankSource);
+      const count = cur ? cur.count : 0;
+      if (!confirm(`Delete the "${this.rankSource}" source and its ${count} players? This can't be undone.`)) return;
+      const res = await fetch(`${API}/api/rankings/sources/${encodeURIComponent(this.rankSource)}`, { method: 'DELETE' });
+      if (!res.ok) { this.showToast('Delete failed.'); return; }
+      const result = await res.json();
+      this.selectedPlayer = null;
+      await this.loadRankingSources();
+      if (this.rankSources.length) {
+        this.rankSource = this.rankSources[0].source;
+        await this.changeRankSource();
+      } else {
+        // No sources left — clear the board.
+        this.rankSource = '';
+        this.rankings = [];
+        this.rankingsMeta = { total: 0, positions: [], tiers: [], position_counts: {}, tier_counts: {} };
+      }
+      this.showToast(`Deleted "${result.source}" (${result.deleted} players).`);
+    },
+
+    setRankPos(pos) {
+      this.rankPosFilter = this.rankPosFilter === pos ? '' : pos;
+      this.loadRankings();
+    },
+
+    setRankTier(tier) {
+      this.rankTierFilter = tier;
+      this.loadRankings();
+    },
+
+    onRankSearch() {
+      clearTimeout(this._rankSearchTimer);
+      this._rankSearchTimer = setTimeout(() => this.loadRankings(), 250);
+    },
+
+    async openPlayer(player) {
+      // Pull the full player + ranking profile on click.
+      if (player.player_id == null) { this.selectedPlayer = player; return; }
+      const res = await fetch(`${API}/api/rankings/${player.player_id}?source=${encodeURIComponent(this.rankSource)}`);
+      this.selectedPlayer = res.ok ? await res.json() : player;
+    },
+
+    closePlayer() { this.selectedPlayer = null; },
+
+    posBadgeClass(pos) {
+      return {
+        'bg-emerald-100 text-emerald-700': pos === 'RB',
+        'bg-sky-100 text-sky-700': pos === 'WR',
+        'bg-orange-100 text-orange-700': pos === 'TE',
+        'bg-purple-100 text-purple-700': pos === 'QB',
+        'bg-gray-100 text-gray-600': !['RB','WR','TE','QB'].includes(pos),
+      };
     },
 
     // ---- Quick Add ----

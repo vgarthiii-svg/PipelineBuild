@@ -92,6 +92,8 @@
     </div>
     <div class="flex items-center gap-4">
       <button @click="view = 'pipeline'" :class="view === 'pipeline' ? 'text-blue-600 font-semibold' : 'text-gray-500'" class="text-sm hover:text-blue-600">Pipeline</button>
+      <button @click="view = 'drafts'; loadDrafts()" :class="view === 'drafts' ? 'text-blue-600 font-semibold' : 'text-gray-500'" class="text-sm hover:text-blue-600">Drafts</button>
+      <button @click="openRankings()" :class="view === 'rankings' ? 'text-blue-600 font-semibold' : 'text-gray-500'" class="text-sm hover:text-blue-600">Draft Board</button>
       <button @click="view = 'activity'; loadActivity()" :class="view === 'activity' ? 'text-blue-600 font-semibold' : 'text-gray-500'" class="text-sm hover:text-blue-600">Activity</button>
       <button @click="view = 'agents'; loadAgents()" :class="view === 'agents' ? 'text-blue-600 font-semibold' : 'text-gray-500'" class="text-sm hover:text-blue-600">Agents</button>
       <button @click="showImportModal = true" class="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700">+ Import</button>
@@ -685,6 +687,248 @@
     </div>
 
     <!-- Activity View -->
+    <!-- Draft Tracker View -->
+    <div x-show="view === 'drafts'" x-cloak>
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h2 class="text-lg font-bold">Draft Tracker</h2>
+          <p class="text-xs text-gray-500 mt-1">Every intro email across the pipeline and where it stands. Click a row to open it.</p>
+        </div>
+        <button @click="loadDrafts()" class="text-xs border border-gray-300 px-3 py-1.5 rounded hover:bg-gray-50" :disabled="draftsLoading">
+          <span x-text="draftsLoading ? 'Refreshing…' : 'Refresh'"></span>
+        </button>
+      </div>
+
+      <!-- Status summary / filter tiles -->
+      <div class="grid grid-cols-4 gap-3 mb-4">
+        <button @click="setDraftFilter('')" class="bg-white rounded-lg border p-3 text-center transition-all hover:shadow-md" :class="!draftStatusFilter ? 'ring-2 ring-blue-500 border-blue-500' : ''">
+          <div class="text-2xl font-bold text-gray-900" x-text="draftSummary.total"></div>
+          <div class="text-[11px] text-gray-500 uppercase tracking-wide">All</div>
+        </button>
+        <button @click="setDraftFilter('draft')" class="bg-white rounded-lg border p-3 text-center border-l-4 border-l-gray-400 transition-all hover:shadow-md" :class="draftStatusFilter === 'draft' ? 'ring-2 ring-gray-500 border-gray-500' : ''">
+          <div class="text-2xl font-bold text-gray-900" x-text="draftSummary.draft"></div>
+          <div class="text-[11px] text-gray-500 uppercase tracking-wide">Draft</div>
+        </button>
+        <button @click="setDraftFilter('approved')" class="bg-white rounded-lg border p-3 text-center border-l-4 border-l-yellow-400 transition-all hover:shadow-md" :class="draftStatusFilter === 'approved' ? 'ring-2 ring-yellow-500 border-yellow-500' : ''">
+          <div class="text-2xl font-bold text-gray-900" x-text="draftSummary.approved"></div>
+          <div class="text-[11px] text-gray-500 uppercase tracking-wide">Approved</div>
+        </button>
+        <button @click="setDraftFilter('sent')" class="bg-white rounded-lg border p-3 text-center border-l-4 border-l-green-500 transition-all hover:shadow-md" :class="draftStatusFilter === 'sent' ? 'ring-2 ring-green-500 border-green-500' : ''">
+          <div class="text-2xl font-bold text-gray-900" x-text="draftSummary.sent"></div>
+          <div class="text-[11px] text-gray-500 uppercase tracking-wide">Sent</div>
+        </button>
+      </div>
+
+      <!-- Draft table -->
+      <div class="bg-white rounded-lg border overflow-hidden">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-50 text-gray-500 text-xs">
+            <tr>
+              <th class="px-3 py-2 text-left font-medium">Prospect</th>
+              <th class="px-3 py-2 text-left font-medium">Client</th>
+              <th class="px-3 py-2 text-left font-medium">Contact</th>
+              <th class="px-3 py-2 text-left font-medium">Subject</th>
+              <th class="px-3 py-2 text-center font-medium">Tier</th>
+              <th class="px-3 py-2 text-center font-medium">MS</th>
+              <th class="px-3 py-2 text-center font-medium">Status</th>
+              <th class="px-3 py-2 text-left font-medium">Updated</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y">
+            <template x-for="d in drafts" :key="d.id">
+              <tr class="hover:bg-blue-50 cursor-pointer" @click="openDraft(d)">
+                <td class="px-3 py-2 font-medium text-gray-900" x-text="d.prospect_name || '—'"></td>
+                <td class="px-3 py-2 text-gray-500 text-xs" x-text="d.client_name || '—'"></td>
+                <td class="px-3 py-2 text-gray-600 text-xs" x-text="d.target_contact || '—'"></td>
+                <td class="px-3 py-2 text-gray-600 text-xs truncate max-w-xs" x-text="d.email_subject || '—'"></td>
+                <td class="px-3 py-2 text-center">
+                  <span x-show="d.tier" class="text-[10px] px-2 py-0.5 rounded-full uppercase font-semibold"
+                    :class="{'bg-green-100 text-green-700': d.tier === 'hot', 'bg-yellow-100 text-yellow-700': d.tier === 'warm', 'bg-gray-100 text-gray-600': d.tier === 'monitor' || d.tier === 'unscored', 'bg-red-100 text-red-500': d.tier === 'pass'}"
+                    x-text="d.tier"></span>
+                  <span x-show="!d.tier" class="text-gray-300">—</span>
+                </td>
+                <td class="px-3 py-2 text-center text-xs text-gray-700" x-text="d.matchmaker_score != null ? d.matchmaker_score : '—'"></td>
+                <td class="px-3 py-2 text-center">
+                  <span class="text-[10px] px-2 py-0.5 rounded uppercase font-semibold"
+                    :class="{'bg-gray-100 text-gray-600': d.status === 'draft', 'bg-yellow-100 text-yellow-700': d.status === 'approved', 'bg-green-100 text-green-700': d.status === 'sent'}"
+                    x-text="d.status"></span>
+                </td>
+                <td class="px-3 py-2 text-xs text-gray-400" x-text="formatDate(d.sent_date || d.created_at)"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <div x-show="drafts.length === 0 && !draftsLoading" class="px-4 py-8 text-center text-gray-400">
+          <span x-show="!draftStatusFilter">No intro drafts yet. Generate one from a pipeline entry’s Intro tab.</span>
+          <span x-show="draftStatusFilter" x-text="'No ' + draftStatusFilter + ' drafts.'"></span>
+        </div>
+        <div x-show="draftsLoading" class="px-4 py-8 text-center text-gray-400">Loading…</div>
+      </div>
+    </div>
+
+    <!-- PPR Draft Board View -->
+    <div x-show="view === 'rankings'" x-cloak>
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <h2 class="text-lg font-bold">PPR Draft Board</h2>
+          <p class="text-xs text-gray-500 mt-1">
+            <span x-text="rankingsMeta.total"></span> players. Pick a ranking source, then click a player for the full profile.
+          </p>
+        </div>
+        <div class="flex items-center gap-2">
+          <!-- Ranking source picker -->
+          <label class="text-[11px] text-gray-400 uppercase tracking-wide">Source</label>
+          <select x-model="rankSource" @change="changeRankSource()" class="text-xs border border-gray-300 rounded-lg px-2 py-1.5 bg-white font-medium" title="Choose which ranking file to use">
+            <template x-for="s in rankSources" :key="s.source">
+              <option :value="s.source" x-text="s.source + ' (' + s.count + ')'"></option>
+            </template>
+          </select>
+          <!-- Rename the selected source -->
+          <button @click="renameRankSource()" class="text-xs border border-gray-300 text-gray-600 px-2 py-1.5 rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed" :disabled="!rankSource" title="Rename the selected ranking source">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+          </button>
+          <!-- Delete the selected source -->
+          <button @click="deleteRankSource()" class="text-xs border border-red-300 text-red-600 px-2 py-1.5 rounded hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed" :disabled="!rankSource" title="Delete the selected ranking source">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+          </button>
+          <!-- Upload a new ranking source (CSV) -->
+          <input type="file" accept=".csv,text/csv" class="hidden" x-ref="rankUpload" @change="uploadRankingsFile($event)" />
+          <button @click="$refs.rankUpload.click()" class="text-xs border border-blue-300 text-blue-700 px-3 py-1.5 rounded hover:bg-blue-50 flex items-center gap-1" :disabled="uploadingRankings" title="Upload a rankings CSV as a new source">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0-12l-4 4m4-4l4 4"/></svg>
+            <span x-text="uploadingRankings ? 'Uploading…' : 'Upload CSV'"></span>
+          </button>
+          <button @click="loadRankings()" class="text-xs border border-gray-300 px-3 py-1.5 rounded hover:bg-gray-50" :disabled="rankingsLoading">
+            <span x-text="rankingsLoading ? 'Loading…' : 'Refresh'"></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Filters: position chips + tier dropdown + search -->
+      <div class="flex flex-wrap items-center gap-2 mb-3">
+        <button @click="setRankPos('')" class="text-xs px-3 py-1.5 rounded-full border transition-colors"
+          :class="!rankPosFilter ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'">
+          All <span class="opacity-70" x-text="'· ' + rankingsMeta.total"></span>
+        </button>
+        <template x-for="pos in rankingsMeta.positions" :key="pos">
+          <button @click="setRankPos(pos)" class="text-xs px-3 py-1.5 rounded-full border transition-colors"
+            :class="rankPosFilter === pos ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'">
+            <span x-text="pos"></span>
+            <span class="opacity-70" x-text="'· ' + (rankingsMeta.position_counts[pos] || 0)"></span>
+          </button>
+        </template>
+        <select x-model="rankTierFilter" @change="setRankTier(rankTierFilter)" class="text-xs border border-gray-300 rounded-lg px-2 py-1.5 bg-white ml-1">
+          <option value="">All tiers</option>
+          <template x-for="t in rankingsMeta.tiers" :key="t">
+            <option :value="t" x-text="'Tier ' + t + ' (' + (rankingsMeta.tier_counts[t] || 0) + ')'"></option>
+          </template>
+        </select>
+        <div class="relative ml-auto">
+          <input type="text" x-model="rankSearch" @input="onRankSearch()" placeholder="Search player…"
+            class="text-xs border border-gray-300 rounded-lg pl-3 pr-7 py-1.5 bg-white w-48" />
+          <button x-show="rankSearch" @click="rankSearch=''; loadRankings()" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">&times;</button>
+        </div>
+      </div>
+
+      <!-- Rankings table -->
+      <div class="bg-white rounded-lg border overflow-hidden">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-50 text-gray-500 text-xs">
+            <tr>
+              <th class="px-3 py-2 text-center font-medium w-12">#</th>
+              <th class="px-3 py-2 text-left font-medium">Player</th>
+              <th class="px-3 py-2 text-left font-medium">Team</th>
+              <th class="px-3 py-2 text-center font-medium">Pos</th>
+              <th class="px-3 py-2 text-center font-medium">Tier</th>
+              <th class="px-3 py-2 text-center font-medium" title="Mason Dodd Rank">MD</th>
+              <th class="px-3 py-2 text-center font-medium" title="Expert / consensus rank">Expert</th>
+              <th class="px-3 py-2 text-center font-medium" title="Expert rank minus overall rank — positive = value">Value</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y">
+            <template x-for="p in rankings" :key="p.id">
+              <tr class="hover:bg-blue-50 cursor-pointer" @click="openPlayer(p)">
+                <td class="px-3 py-2 text-center text-gray-400 font-mono" x-text="p.rank"></td>
+                <td class="px-3 py-2 font-medium text-gray-900" x-text="p.name"></td>
+                <td class="px-3 py-2 text-gray-500 text-xs" x-text="p.team || 'FA'"></td>
+                <td class="px-3 py-2 text-center">
+                  <span class="text-[10px] px-2 py-0.5 rounded font-semibold" :class="posBadgeClass(p.position)"
+                    x-text="p.position + (p.position_rank ? p.position_rank : '')"></span>
+                </td>
+                <td class="px-3 py-2 text-center"><span class="text-xs font-semibold text-gray-600" x-text="p.tier || '—'"></span></td>
+                <td class="px-3 py-2 text-center text-xs text-gray-500" x-text="p.mason_dodd_rank != null ? p.mason_dodd_rank : '—'"></td>
+                <td class="px-3 py-2 text-center text-xs text-gray-500" x-text="p.expert_rank != null ? p.expert_rank : '—'"></td>
+                <td class="px-3 py-2 text-center text-xs font-medium"
+                  :class="p.value_delta > 0 ? 'text-green-600' : (p.value_delta < 0 ? 'text-red-500' : 'text-gray-400')"
+                  x-text="p.value_delta != null ? (p.value_delta > 0 ? '+' : '') + p.value_delta : '—'"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <div x-show="rankings.length === 0 && !rankingsLoading" class="px-4 py-8 text-center text-gray-400">No players match these filters.</div>
+        <div x-show="rankingsLoading" class="px-4 py-8 text-center text-gray-400">Loading…</div>
+      </div>
+    </div>
+
+    <!-- Player Profile slide-over -->
+    <div x-show="selectedPlayer" x-cloak class="fixed inset-0 z-50" @keydown.escape.window="closePlayer()">
+      <div class="absolute inset-0 bg-black/30" @click="closePlayer()"></div>
+      <div class="absolute right-0 top-0 h-full w-full max-w-md bg-white shadow-xl overflow-y-auto">
+        <template x-if="selectedPlayer">
+          <div class="p-5">
+            <div class="flex items-start justify-between">
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="text-[11px] px-2 py-0.5 rounded font-semibold" :class="posBadgeClass(selectedPlayer.position)"
+                    x-text="selectedPlayer.position + (selectedPlayer.position_rank ? selectedPlayer.position_rank : '')"></span>
+                  <span class="text-xs text-gray-400" x-text="selectedPlayer.team || 'Free Agent'"></span>
+                </div>
+                <h3 class="text-xl font-bold mt-1" x-text="selectedPlayer.name"></h3>
+                <div class="text-xs text-gray-500 mt-0.5" x-text="selectedPlayer.source"></div>
+              </div>
+              <button @click="closePlayer()" class="text-gray-400 hover:text-gray-700 text-2xl leading-none">&times;</button>
+            </div>
+
+            <!-- Headline stat cards -->
+            <div class="grid grid-cols-3 gap-3 mt-4">
+              <div class="bg-gray-50 rounded-lg p-3 text-center">
+                <div class="text-2xl font-bold text-gray-900" x-text="selectedPlayer.rank"></div>
+                <div class="text-[10px] uppercase tracking-wide text-gray-500">Overall</div>
+              </div>
+              <div class="bg-gray-50 rounded-lg p-3 text-center">
+                <div class="text-2xl font-bold text-gray-900" x-text="selectedPlayer.position + (selectedPlayer.position_rank || '')"></div>
+                <div class="text-[10px] uppercase tracking-wide text-gray-500">Pos Rank</div>
+              </div>
+              <div class="bg-gray-50 rounded-lg p-3 text-center">
+                <div class="text-2xl font-bold text-gray-900" x-text="selectedPlayer.tier || '—'"></div>
+                <div class="text-[10px] uppercase tracking-wide text-gray-500">Tier</div>
+              </div>
+            </div>
+
+            <!-- Full ranking data -->
+            <div class="mt-5">
+              <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Ranking Data</h4>
+              <dl class="divide-y border rounded-lg overflow-hidden">
+                <div class="flex justify-between px-3 py-2"><dt class="text-xs text-gray-500">Player ID</dt><dd class="text-sm font-medium" x-text="selectedPlayer.player_id ?? '—'"></dd></div>
+                <div class="flex justify-between px-3 py-2"><dt class="text-xs text-gray-500">Overall Rank</dt><dd class="text-sm font-medium" x-text="selectedPlayer.rank ?? '—'"></dd></div>
+                <div class="flex justify-between px-3 py-2"><dt class="text-xs text-gray-500">Position</dt><dd class="text-sm font-medium" x-text="selectedPlayer.position ?? '—'"></dd></div>
+                <div class="flex justify-between px-3 py-2"><dt class="text-xs text-gray-500">Position Rank</dt><dd class="text-sm font-medium" x-text="(selectedPlayer.position || '') + (selectedPlayer.position_rank || '—')"></dd></div>
+                <div class="flex justify-between px-3 py-2"><dt class="text-xs text-gray-500">Team</dt><dd class="text-sm font-medium" x-text="selectedPlayer.team || 'Free Agent'"></dd></div>
+                <div class="flex justify-between px-3 py-2"><dt class="text-xs text-gray-500">Tier</dt><dd class="text-sm font-medium" x-text="selectedPlayer.tier ?? '—'"></dd></div>
+                <div class="flex justify-between px-3 py-2"><dt class="text-xs text-gray-500">Mason Dodd Rank</dt><dd class="text-sm font-medium" x-text="selectedPlayer.mason_dodd_rank != null ? selectedPlayer.mason_dodd_rank : '—'"></dd></div>
+                <div class="flex justify-between px-3 py-2"><dt class="text-xs text-gray-500">Expert Rank</dt><dd class="text-sm font-medium" x-text="selectedPlayer.expert_rank != null ? selectedPlayer.expert_rank : '—'"></dd></div>
+                <div class="flex justify-between px-3 py-2">
+                  <dt class="text-xs text-gray-500">Value vs Expert</dt>
+                  <dd class="text-sm font-semibold" :class="selectedPlayer.value_delta > 0 ? 'text-green-600' : (selectedPlayer.value_delta < 0 ? 'text-red-500' : 'text-gray-500')"
+                    x-text="selectedPlayer.value_delta != null ? (selectedPlayer.value_delta > 0 ? '+' : '') + selectedPlayer.value_delta : '—'"></dd>
+                </div>
+              </dl>
+              <p class="text-[11px] text-gray-400 mt-2">Value = Expert Rank − Overall Rank. Positive means this board ranks the player ahead of expert consensus (a relative value); negative means it's higher on him than the field.</p>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
     <div x-show="view === 'activity'" x-cloak>
       <h2 class="text-lg font-bold mb-3">Activity Feed</h2>
       <div class="bg-white rounded-lg border divide-y">
