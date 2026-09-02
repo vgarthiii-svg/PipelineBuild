@@ -75,6 +75,45 @@ class TestRankings:
         assert sources[0]["source"] == "REDRAFT PPR"
         assert sources[0]["count"] > 300
 
+    def test_upload_csv_creates_named_source(self, client):
+        csv = (
+            "player_id,Rank,Name,Team,Position,Tier,Mason Dodd Rank,Expert Rank\n"
+            "1,1,Test QB,KC,QB,S,1,1.5\n"
+            "2,2,Test RB,SF,RB,A,-,3.0\n"
+        )
+        r = client.post(
+            "/api/rankings/upload",
+            files={"file": ("my_board.csv", csv, "text/csv")},
+            data={"source": "My Board"},
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["source"] == "My Board"
+        assert body["total"] == 2
+        rows = client.get("/api/rankings?source=My Board").json()
+        assert {p["name"] for p in rows} == {"Test QB", "Test RB"}
+        # '-' Mason Dodd rank parses to null, not a crash
+        rb = next(p for p in rows if p["name"] == "Test RB")
+        assert rb["mason_dodd_rank"] is None
+
+    def test_upload_defaults_source_to_filename(self, client):
+        csv = "player_id,Rank,Name,Position\n5,1,Solo Guy,WR\n"
+        r = client.post(
+            "/api/rankings/upload",
+            files={"file": ("week1_ranks.csv", csv, "text/csv")},
+        )
+        assert r.status_code == 200
+        assert r.json()["source"] == "week1_ranks"
+
+    def test_upload_rejects_csv_without_name_column(self, client):
+        csv = "player_id,Rank,Position\n1,1,QB\n"
+        r = client.post(
+            "/api/rankings/upload",
+            files={"file": ("bad.csv", csv, "text/csv")},
+            data={"source": "Bad"},
+        )
+        assert r.status_code == 400
+
     def test_multiple_sources_are_isolated(self, client):
         # Default source
         base = self._import(client)

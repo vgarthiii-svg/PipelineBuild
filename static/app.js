@@ -49,6 +49,7 @@ function app() {
     rankTierFilter: '',
     rankSearch: '',
     rankingsLoading: false,
+    uploadingRankings: false,
     selectedPlayer: null,
     _rankSearchTimer: null,
     scoring: false,
@@ -1201,6 +1202,39 @@ function app() {
       this.selectedPlayer = null;
       await this.loadRankingsMeta();
       await this.loadRankings();
+    },
+
+    async uploadRankingsFile(event) {
+      const input = event.target;
+      const f = input.files && input.files[0];
+      if (!f) return;
+      // Optional custom source name; default is the file name (server derives it).
+      const name = prompt('Name this ranking source:', f.name.replace(/\.[^.]+$/, ''));
+      if (name === null) { input.value = ''; return; }  // cancelled
+
+      this.uploadingRankings = true;
+      try {
+        const fd = new FormData();
+        fd.append('file', f);
+        if (name.trim()) fd.append('source', name.trim());
+        const res = await fetch(`${API}/api/rankings/upload`, { method: 'POST', body: fd });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          this.showToast('Upload failed: ' + (err.detail || res.status));
+          return;
+        }
+        const result = await res.json();
+        // Make the newly uploaded file the active source and show it.
+        await this.loadRankingSources();
+        this.rankSource = result.source;
+        await this.changeRankSource();
+        this.showToast(`Imported ${result.total} players into "${result.source}".`);
+      } catch (e) {
+        this.showToast('Upload failed. Check the file and try again.');
+      } finally {
+        this.uploadingRankings = false;
+        input.value = '';  // allow re-uploading the same file
+      }
     },
 
     setRankPos(pos) {

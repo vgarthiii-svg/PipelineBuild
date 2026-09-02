@@ -4,7 +4,9 @@ fantasy-football rankings.
 """
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+import os
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -132,6 +134,38 @@ def import_rankings(source: str = DEFAULT_SOURCE, db: Session = Depends(get_db))
     """(Re)load the bundled rankings CSV, upserting by player_id."""
     result = rankings_import.import_rankings(db, rankings_import.DEFAULT_CSV, source)
     return RankingsImportResult(source=source, **result)
+
+
+@router.post("/upload", response_model=RankingsImportResult)
+async def upload_rankings(
+    file: UploadFile = File(...),
+    source: str = Form(None),
+    db: Session = Depends(get_db),
+):
+    """
+    Upload a rankings CSV and import it as a named source. If `source` is
+    omitted, the file name (without extension) becomes the source name.
+    Expected columns: player_id, Rank, Name, Team, Position, Tier,
+    Mason Dodd Rank, Expert Rank (only Name is required).
+    """
+    raw = await file.read()
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="File must be UTF-8 encoded CSV text.")
+
+    source_name = (source or "").strip()
+    if not source_name:
+        base = os.path.basename(file.filename or "").rsplit(".", 1)[0]
+        source_name = base.strip() or "Uploaded rankings"
+
+    result = rankings_import.import_text(db, text, source_name)
+    if result["total"] == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="No player rows found. The CSV needs a header row with a 'Name' column.",
+        )
+    return RankingsImportResult(source=source_name, **result)
 
 
 @router.get("/{player_id}", response_model=PlayerRankingOut)

@@ -783,6 +783,12 @@
               <option :value="s.source" x-text="s.source + ' (' + s.count + ')'"></option>
             </template>
           </select>
+          <!-- Upload a new ranking source (CSV) -->
+          <input type="file" accept=".csv,text/csv" class="hidden" x-ref="rankUpload" @change="uploadRankingsFile($event)" />
+          <button @click="$refs.rankUpload.click()" class="text-xs border border-blue-300 text-blue-700 px-3 py-1.5 rounded hover:bg-blue-50 flex items-center gap-1" :disabled="uploadingRankings" title="Upload a rankings CSV as a new source">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0-12l-4 4m4-4l4 4"/></svg>
+            <span x-text="uploadingRankings ? 'Uploading…' : 'Upload CSV'"></span>
+          </button>
           <button @click="loadRankings()" class="text-xs border border-gray-300 px-3 py-1.5 rounded hover:bg-gray-50" :disabled="rankingsLoading">
             <span x-text="rankingsLoading ? 'Loading…' : 'Refresh'"></span>
           </button>

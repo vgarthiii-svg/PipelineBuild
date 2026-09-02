@@ -43,34 +43,53 @@ def _to_float(val):
         return None
 
 
+REQUIRED_COLUMNS = {"Name"}
+
+
+def _normalize(row: dict):
+    name = (row.get("Name") or "").strip()
+    if not name:
+        return None
+    return {
+        "player_id": _to_int(row.get("player_id")),
+        "rank": _to_int(row.get("Rank")),
+        "name": name,
+        "team": (row.get("Team") or "").strip() or None,
+        "position": (row.get("Position") or "").strip() or None,
+        "tier": (row.get("Tier") or "").strip() or None,
+        "mason_dodd_rank": _to_int(row.get("Mason Dodd Rank")),
+        "expert_rank": _to_float(row.get("Expert Rank")),
+    }
+
+
+def parse_reader(reader):
+    """Yield normalized dicts from a csv.DictReader."""
+    for row in reader:
+        data = _normalize(row)
+        if data:
+            yield data
+
+
 def parse_rows(path=DEFAULT_CSV):
-    """Yield normalized dicts from the rankings CSV."""
+    """Yield normalized dicts from a rankings CSV file path."""
     with open(path, newline="", encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            name = (row.get("Name") or "").strip()
-            if not name:
-                continue
-            yield {
-                "player_id": _to_int(row.get("player_id")),
-                "rank": _to_int(row.get("Rank")),
-                "name": name,
-                "team": (row.get("Team") or "").strip() or None,
-                "position": (row.get("Position") or "").strip() or None,
-                "tier": (row.get("Tier") or "").strip() or None,
-                "mason_dodd_rank": _to_int(row.get("Mason Dodd Rank")),
-                "expert_rank": _to_float(row.get("Expert Rank")),
-            }
+        yield from parse_reader(csv.DictReader(f))
 
 
-def import_rankings(db: Session, path=DEFAULT_CSV, source=DEFAULT_SOURCE):
+def parse_text(text):
+    """Yield normalized dicts from raw CSV text (e.g. an uploaded file)."""
+    import io
+    yield from parse_reader(csv.DictReader(io.StringIO(text)))
+
+
+def import_rows(db: Session, rows, source=DEFAULT_SOURCE):
     """
-    Upsert rows from `path` into player_rankings under `source`.
+    Upsert an iterable of normalized rows into player_rankings under `source`.
     Returns {"imported": n_new, "updated": n_existing, "total": n_in_source}.
     """
     imported = 0
     updated = 0
-    for data in parse_rows(path):
+    for data in rows:
         existing = None
         if data["player_id"] is not None:
             existing = (
@@ -91,6 +110,16 @@ def import_rankings(db: Session, path=DEFAULT_CSV, source=DEFAULT_SOURCE):
     db.commit()
     total = db.query(PlayerRanking).filter(PlayerRanking.source == source).count()
     return {"imported": imported, "updated": updated, "total": total}
+
+
+def import_rankings(db: Session, path=DEFAULT_CSV, source=DEFAULT_SOURCE):
+    """Upsert rows from a CSV file `path` into player_rankings under `source`."""
+    return import_rows(db, parse_rows(path), source)
+
+
+def import_text(db: Session, text, source=DEFAULT_SOURCE):
+    """Upsert rows from raw CSV `text` into player_rankings under `source`."""
+    return import_rows(db, parse_text(text), source)
 
 
 def seed_rankings(db: Session):
