@@ -1237,6 +1237,28 @@ function app() {
       }
     },
 
+    async deleteRankSource() {
+      if (!this.rankSource) return;
+      const cur = this.rankSources.find(s => s.source === this.rankSource);
+      const count = cur ? cur.count : 0;
+      if (!confirm(`Delete the "${this.rankSource}" source and its ${count} players? This can't be undone.`)) return;
+      const res = await fetch(`${API}/api/rankings/sources/${encodeURIComponent(this.rankSource)}`, { method: 'DELETE' });
+      if (!res.ok) { this.showToast('Delete failed.'); return; }
+      const result = await res.json();
+      this.selectedPlayer = null;
+      await this.loadRankingSources();
+      if (this.rankSources.length) {
+        this.rankSource = this.rankSources[0].source;
+        await this.changeRankSource();
+      } else {
+        // No sources left — clear the board.
+        this.rankSource = '';
+        this.rankings = [];
+        this.rankingsMeta = { total: 0, positions: [], tiers: [], position_counts: {}, tier_counts: {} };
+      }
+      this.showToast(`Deleted "${result.source}" (${result.deleted} players).`);
+    },
+
     setRankPos(pos) {
       this.rankPosFilter = this.rankPosFilter === pos ? '' : pos;
       this.loadRankings();

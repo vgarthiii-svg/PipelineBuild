@@ -292,6 +292,11 @@ class RankingSource(BaseModel):
     count: int
 
 
+class RankingsDeleteResult(BaseModel):
+    source: str
+    deleted: int
+
+
 # ---- Activity ----
 
 class ActivityOut(BaseModel):

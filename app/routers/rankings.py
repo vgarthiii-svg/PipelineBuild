@@ -13,7 +13,13 @@ from app.database import get_db
 from app.models import PlayerRanking
 from sqlalchemy import func
 
-from app.schemas import PlayerRankingOut, RankingsMeta, RankingsImportResult, RankingSource
+from app.schemas import (
+    PlayerRankingOut,
+    RankingsMeta,
+    RankingsImportResult,
+    RankingSource,
+    RankingsDeleteResult,
+)
 from app.services import rankings_import
 
 router = APIRouter(prefix="/api/rankings", tags=["rankings"])
@@ -95,6 +101,20 @@ def list_sources(db: Session = Depends(get_db)):
         .all()
     )
     return [RankingSource(source=s, count=c) for s, c in rows]
+
+
+@router.delete("/sources/{source}", response_model=RankingsDeleteResult)
+def delete_source(source: str, db: Session = Depends(get_db)):
+    """Delete every player row for a source, removing it from the board."""
+    n = (
+        db.query(PlayerRanking)
+        .filter(PlayerRanking.source == source)
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    if n == 0:
+        raise HTTPException(status_code=404, detail="Source not found")
+    return RankingsDeleteResult(source=source, deleted=n)
 
 
 @router.get("/meta", response_model=RankingsMeta)

@@ -114,6 +114,24 @@ class TestRankings:
         )
         assert r.status_code == 400
 
+    def test_delete_source_removes_only_that_source(self, client):
+        self._import(client)  # REDRAFT PPR
+        client.post("/api/rankings/import?source=Doomed").json()
+        # Delete the extra source
+        d = client.delete("/api/rankings/sources/Doomed")
+        assert d.status_code == 200
+        assert d.json()["source"] == "Doomed"
+        assert d.json()["deleted"] > 0
+        # It's gone; the default source is untouched
+        sources = {s["source"] for s in client.get("/api/rankings/sources").json()}
+        assert "Doomed" not in sources
+        assert "REDRAFT PPR" in sources
+        assert client.get("/api/rankings?source=Doomed").json() == []
+
+    def test_delete_missing_source_404(self, client):
+        self._import(client)
+        assert client.delete("/api/rankings/sources/Nope").status_code == 404
+
     def test_multiple_sources_are_isolated(self, client):
         # Default source
         base = self._import(client)
