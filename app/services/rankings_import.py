@@ -122,10 +122,66 @@ def import_text(db: Session, text, source=DEFAULT_SOURCE):
     return import_rows(db, parse_text(text), source)
 
 
+EXPERT_SOURCE = "Expert Consensus PPR Redraft 2026"
+
+
+def build_expert_source(db: Session, base_source=DEFAULT_SOURCE, expert_source=EXPERT_SOURCE):
+    """
+    Derive a standalone source ranked by the Expert Rank column of `base_source`.
+
+    Players are re-ordered by expert_rank (ascending) and given a fresh 1..N
+    overall rank. Tier bands are carried over from the base source's own tier
+    sizes applied in expert order (top block = S, next = A, …), so the tier
+    filter stays meaningful. The original Mason Dodd rank is preserved for
+    side-by-side comparison. Rebuilt from scratch each call (idempotent).
+    """
+    base_rows = (
+        db.query(PlayerRanking)
+        .filter(PlayerRanking.source == base_source)
+        .order_by(PlayerRanking.rank.asc())
+        .all()
+    )
+    ranked = [r for r in base_rows if r.expert_rank is not None]
+    if not ranked:
+        return {"imported": 0, "total": 0}
+
+    # Tier labels in base-rank order (band sizes to reuse for the expert board).
+    tier_sequence = [r.tier for r in ranked]
+    expert_order = sorted(ranked, key=lambda r: r.expert_rank)
+
+    # Rebuild the expert source cleanly.
+    db.query(PlayerRanking).filter(PlayerRanking.source == expert_source).delete(
+        synchronize_session=False
+    )
+    for i, r in enumerate(expert_order):
+        db.add(PlayerRanking(
+            source=expert_source,
+            player_id=r.player_id,
+            rank=i + 1,
+            name=r.name,
+            team=r.team,
+            position=r.position,
+            tier=tier_sequence[i] if i < len(tier_sequence) else None,
+            mason_dodd_rank=r.mason_dodd_rank,
+            expert_rank=r.expert_rank,
+        ))
+    db.commit()
+    total = db.query(PlayerRanking).filter(PlayerRanking.source == expert_source).count()
+    return {"imported": len(expert_order), "total": total}
+
+
+def ensure_expert_source(db: Session):
+    """Create the derived Expert source if the base exists and it's missing."""
+    has_base = db.query(PlayerRanking).filter(PlayerRanking.source == DEFAULT_SOURCE).first()
+    has_expert = db.query(PlayerRanking).filter(PlayerRanking.source == EXPERT_SOURCE).first()
+    if has_base and not has_expert:
+        build_expert_source(db, DEFAULT_SOURCE, EXPERT_SOURCE)
+
+
 def seed_rankings(db: Session):
-    """Load the bundled rankings CSV on first run if the table is empty."""
-    if db.query(PlayerRanking).count() > 0:
-        return
-    if not os.path.exists(DEFAULT_CSV):
-        return
-    import_rankings(db, DEFAULT_CSV, DEFAULT_SOURCE)
+    """Load the bundled rankings on first run and derive the Expert source."""
+    if os.path.exists(DEFAULT_CSV) and (
+        db.query(PlayerRanking).filter(PlayerRanking.source == DEFAULT_SOURCE).count() == 0
+    ):
+        import_rankings(db, DEFAULT_CSV, DEFAULT_SOURCE)
+    ensure_expert_source(db)

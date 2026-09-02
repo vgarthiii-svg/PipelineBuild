@@ -1,7 +1,7 @@
 """
 PPR Draft Board: import, list/filter, meta, and player profile endpoints.
 """
-from app.services.rankings_import import DEFAULT_SOURCE
+from app.services.rankings_import import DEFAULT_SOURCE, EXPERT_SOURCE
 
 
 class TestRankings:
@@ -185,6 +185,42 @@ class TestRankings:
         client.post("/api/rankings/import", params={"source": "Mason Dodd PPR Dynasty"})
         rows = client.get("/api/rankings", params={"source": "Mason Dodd PPR"}).json()
         assert rows == []  # ambiguous -> no silent pick
+
+    def test_derive_expert_source(self, client):
+        base = self._import(client)
+        r = client.post("/api/rankings/derive-expert")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["source"] == EXPERT_SOURCE
+        assert body["total"] == base["total"]
+
+        # It's a distinct, selectable source alongside the base.
+        sources = {s["source"] for s in client.get("/api/rankings/sources").json()}
+        assert EXPERT_SOURCE in sources and DEFAULT_SOURCE in sources
+
+        rows = client.get("/api/rankings", params={"source": EXPERT_SOURCE, "limit": 1000}).json()
+        # Ranked by expert_rank ascending, with a fresh 1..N overall rank.
+        assert [p["rank"] for p in rows] == list(range(1, len(rows) + 1))
+        experts = [p["expert_rank"] for p in rows]
+        assert experts == sorted(experts)
+        # #1 by expert consensus is the lowest expert_rank (Jahmyr Gibbs, 1.13).
+        assert rows[0]["name"] == "Jahmyr Gibbs"
+
+    def test_pull_expert_by_short_handle(self, client):
+        self._import(client)
+        client.post("/api/rankings/derive-expert")
+        rows = client.get("/api/rankings", params={"source": "Expert"}).json()
+        assert len(rows) > 300
+        assert all(p["source"] == EXPERT_SOURCE for p in rows)
+
+    def test_derive_expert_is_idempotent(self, client):
+        self._import(client)
+        first = client.post("/api/rankings/derive-expert").json()
+        second = client.post("/api/rankings/derive-expert").json()
+        assert first["total"] == second["total"]
+        # Rebuilt in place — not duplicated.
+        rows = client.get("/api/rankings", params={"source": EXPERT_SOURCE, "limit": 1000}).json()
+        assert len(rows) == second["total"]
 
     def test_rename_collision_409(self, client):
         self._import(client)

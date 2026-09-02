@@ -215,6 +215,26 @@ def import_rankings(source: str = DEFAULT_SOURCE, db: Session = Depends(get_db))
     return RankingsImportResult(source=source, **result)
 
 
+@router.post("/derive-expert", response_model=RankingsImportResult)
+def derive_expert(
+    base: str = DEFAULT_SOURCE,
+    name: str = rankings_import.EXPERT_SOURCE,
+    db: Session = Depends(get_db),
+):
+    """
+    Build a standalone source ranked by the Expert Rank column of `base`.
+    Lets you select expert-consensus rankings as their own source.
+    """
+    base_source = _resolve_source(db, base)
+    result = rankings_import.build_expert_source(db, base_source, name)
+    if result["total"] == 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"'{base_source}' has no Expert Rank values to derive from.",
+        )
+    return RankingsImportResult(source=name, imported=result["imported"], updated=0, total=result["total"])
+
+
 @router.post("/upload", response_model=RankingsImportResult)
 async def upload_rankings(
     file: UploadFile = File(...),
