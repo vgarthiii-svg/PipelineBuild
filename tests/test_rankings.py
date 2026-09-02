@@ -159,6 +159,33 @@ class TestRankings:
         r = client.put(f"/api/rankings/sources/{DEFAULT_SOURCE}", params={"new_name": "  "})
         assert r.status_code == 400
 
+    def test_pull_by_short_handle(self, client):
+        # Bundled source is "Mason Dodd PPR Redraft 2026"; pull it by "Mason Dodd PPR".
+        base = self._import(client)
+        rows = client.get("/api/rankings", params={"source": "Mason Dodd PPR"}).json()
+        assert len(rows) == base["total"]
+        assert all(p["source"] == base["source"] for p in rows)
+
+    def test_short_handle_is_case_insensitive(self, client):
+        base = self._import(client)
+        rows = client.get("/api/rankings", params={"source": "mason dodd ppr"}).json()
+        assert len(rows) == base["total"]
+        meta = client.get("/api/rankings/meta", params={"source": "mason dodd"}).json()
+        assert meta["source"] == base["source"]
+        assert meta["total"] == base["total"]
+
+    def test_player_profile_via_short_handle(self, client):
+        self._import(client)
+        p = client.get("/api/rankings/7564", params={"source": "Mason Dodd PPR"}).json()
+        assert p["name"] == "Ja'Marr Chase"
+
+    def test_ambiguous_handle_returns_empty(self, client):
+        # Two sources sharing the "Mason Dodd PPR" prefix -> handle is ambiguous.
+        self._import(client)  # Mason Dodd PPR Redraft 2026
+        client.post("/api/rankings/import", params={"source": "Mason Dodd PPR Dynasty"})
+        rows = client.get("/api/rankings", params={"source": "Mason Dodd PPR"}).json()
+        assert rows == []  # ambiguous -> no silent pick
+
     def test_rename_collision_409(self, client):
         self._import(client)
         client.post("/api/rankings/import?source=Other").json()

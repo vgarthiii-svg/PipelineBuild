@@ -28,6 +28,34 @@ router = APIRouter(prefix="/api/rankings", tags=["rankings"])
 DEFAULT_SOURCE = rankings_import.DEFAULT_SOURCE
 
 
+def _resolve_source(db: Session, requested: Optional[str]) -> str:
+    """
+    Resolve a (possibly partial) source name to a real source.
+
+    Lets you pull a source by a short handle — e.g. "Mason Dodd PPR" resolves
+    to "Mason Dodd PPR Redraft 2026". Matching order: exact, case-insensitive
+    exact, unique case-insensitive prefix, unique case-insensitive substring.
+    If nothing matches uniquely, the requested string is returned as-is (which
+    yields an empty result), so an ambiguous handle never silently picks one.
+    """
+    requested = (requested or "").strip()
+    if not requested:
+        return DEFAULT_SOURCE
+    if db.query(PlayerRanking).filter(PlayerRanking.source == requested).first():
+        return requested
+
+    sources = [s for (s,) in db.query(PlayerRanking.source).distinct().all()]
+    rl = requested.lower()
+    for candidates in (
+        [s for s in sources if s.lower() == rl],
+        [s for s in sources if s.lower().startswith(rl)],
+        [s for s in sources if rl in s.lower()],
+    ):
+        if len(candidates) == 1:
+            return candidates[0]
+    return requested
+
+
 def _position_rank_map(db: Session, source: str) -> dict:
     """player_ranking.id -> rank within its position (ordered by overall rank)."""
     rows = (
@@ -77,6 +105,7 @@ def list_rankings(
     db: Session = Depends(get_db),
 ):
     """Ranked player list for a source, with optional position/tier/team/name filters."""
+    source = _resolve_source(db, source)
     query = db.query(PlayerRanking).filter(PlayerRanking.source == source)
     if position:
         query = query.filter(PlayerRanking.position == position.upper())
@@ -149,6 +178,7 @@ def delete_source(source: str, db: Session = Depends(get_db)):
 @router.get("/meta", response_model=RankingsMeta)
 def rankings_meta(source: str = DEFAULT_SOURCE, db: Session = Depends(get_db)):
     """Distinct positions/tiers/teams plus counts, for building filter controls."""
+    source = _resolve_source(db, source)
     rows = db.query(PlayerRanking).filter(PlayerRanking.source == source).all()
     positions, tiers, teams = set(), set(), set()
     pos_counts, tier_counts = {}, {}
@@ -220,6 +250,7 @@ async def upload_rankings(
 @router.get("/{player_id}", response_model=PlayerRankingOut)
 def get_player(player_id: int, source: str = DEFAULT_SOURCE, db: Session = Depends(get_db)):
     """Full profile + ranking data for one player (by external player_id)."""
+    source = _resolve_source(db, source)
     r = (
         db.query(PlayerRanking)
         .filter(PlayerRanking.source == source, PlayerRanking.player_id == player_id)
