@@ -24,7 +24,7 @@ from app.services import backup as backup_service
 
 from app.routers import clients, prospects, pipeline, relationships, intros, activity
 from app.routers import behavior, intent, filters, notifications, profiles, schedules
-from app.routers import rankings
+from app.routers import rankings, draft
 
 log = logging.getLogger("bd_pipeline")
 
@@ -62,6 +62,7 @@ app.include_router(notifications.router)
 app.include_router(profiles.router)
 app.include_router(schedules.router)
 app.include_router(rankings.router)
+app.include_router(draft.router)
 
 # Serve static files (dashboard)
 static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
