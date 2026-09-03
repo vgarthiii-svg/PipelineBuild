@@ -425,3 +425,53 @@ class PlayerRanking(Base):
     expert_rank = Column(Float)                  # consensus/expert rank, nullable
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ============ Fantasy Football: Live Draft Tracker ============
+
+
+class DraftSession(Base):
+    """
+    One live draft. Tracks the ranking source it drafts against, the league
+    shape (teams, rounds, snake), the on-the-clock position, and the teams
+    (as JSON: [{slot, name, owner_tag}], owner_tag in {"me","jake",null}).
+    """
+    __tablename__ = "draft_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, default="Live Draft")
+    source = Column(String, nullable=False)          # ranking source to draft against
+    num_teams = Column(Integer, default=12)
+    rounds = Column(Integer, default=16)
+    snake = Column(Boolean, default=True)
+    current_pick = Column(Integer, default=1)        # 1-based overall pick on the clock
+    teams_json = Column(Text)                         # JSON list of team slots
+    espn_league_id = Column(String)                  # optional, for ESPN sync
+    espn_season = Column(Integer)                     # optional season year
+    status = Column(String, default="active")        # "active" | "complete"
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    picks = relationship("DraftPick", back_populates="session", cascade="all, delete-orphan")
+
+
+class DraftPick(Base):
+    """A single selection in a draft session."""
+    __tablename__ = "draft_picks"
+    __table_args__ = (UniqueConstraint("session_id", "overall_pick", name="uq_session_pick"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("draft_sessions.id"), nullable=False, index=True)
+    overall_pick = Column(Integer, nullable=False)   # 1-based
+    round = Column(Integer)
+    pick_in_round = Column(Integer)
+    team_slot = Column(Integer)                       # which team made the pick
+    player_id = Column(Integer)                       # from player_rankings, nullable for manual
+    player_name = Column(String, nullable=False)
+    position = Column(String)
+    nfl_team = Column(String)
+    source_rank = Column(Integer)                     # player's rank in the draft source when taken
+    via = Column(String, default="manual")            # "manual" | "espn"
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    session = relationship("DraftSession", back_populates="picks")

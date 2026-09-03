@@ -94,6 +94,7 @@
       <button @click="view = 'pipeline'" :class="view === 'pipeline' ? 'text-blue-600 font-semibold' : 'text-gray-500'" class="text-sm hover:text-blue-600">Pipeline</button>
       <button @click="view = 'drafts'; loadDrafts()" :class="view === 'drafts' ? 'text-blue-600 font-semibold' : 'text-gray-500'" class="text-sm hover:text-blue-600">Drafts</button>
       <button @click="openRankings()" :class="view === 'rankings' ? 'text-blue-600 font-semibold' : 'text-gray-500'" class="text-sm hover:text-blue-600">Draft Board</button>
+      <button @click="openLiveDraft()" :class="view === 'draft' ? 'text-blue-600 font-semibold' : 'text-gray-500'" class="text-sm hover:text-blue-600">Live Draft</button>
       <button @click="view = 'activity'; loadActivity()" :class="view === 'activity' ? 'text-blue-600 font-semibold' : 'text-gray-500'" class="text-sm hover:text-blue-600">Activity</button>
       <button @click="view = 'agents'; loadAgents()" :class="view === 'agents' ? 'text-blue-600 font-semibold' : 'text-gray-500'" class="text-sm hover:text-blue-600">Agents</button>
       <button @click="showImportModal = true" class="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700">+ Import</button>
@@ -926,6 +927,211 @@
             </div>
           </div>
         </template>
+      </div>
+    </div>
+
+    <!-- Live Draft View -->
+    <div x-show="view === 'draft'" x-cloak>
+
+      <!-- SETUP (no active draft) -->
+      <div x-show="!draft.active" class="max-w-2xl">
+        <h2 class="text-lg font-bold">Live Draft</h2>
+        <p class="text-xs text-gray-500 mt-1 mb-4">Track tomorrow's draft against your rankings. Click players off the board as they're picked; your pick (#<span x-text="draftSetup.my_slot"></span>) and Jake's (#<span x-text="draftSetup.jake_slot"></span>) are highlighted.</p>
+        <div class="bg-white rounded-lg border p-4 space-y-4">
+          <div>
+            <label class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Ranking source</label>
+            <select x-model="draftSetup.source" class="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white">
+              <template x-for="s in rankSources" :key="s.source">
+                <option :value="s.source" x-text="s.source + ' (' + s.count + ')'"></option>
+              </template>
+            </select>
+          </div>
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <label class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Teams</label>
+              <input type="number" min="2" max="20" x-model.number="draftSetup.num_teams" class="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm" />
+            </div>
+            <div>
+              <label class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Rounds</label>
+              <input type="number" min="1" max="30" x-model.number="draftSetup.rounds" class="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm" />
+            </div>
+            <div>
+              <label class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Format</label>
+              <select x-model="draftSetup.snake" class="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white">
+                <option :value="true">Snake</option>
+                <option :value="false">Linear</option>
+              </select>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Your draft slot</label>
+              <input type="number" min="1" :max="draftSetup.num_teams" x-model.number="draftSetup.my_slot" class="w-full border border-blue-300 rounded-lg px-2 py-1.5 text-sm" />
+            </div>
+            <div>
+              <label class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Jake's draft slot</label>
+              <input type="number" min="1" :max="draftSetup.num_teams" x-model.number="draftSetup.jake_slot" class="w-full border border-amber-300 rounded-lg px-2 py-1.5 text-sm" />
+            </div>
+          </div>
+          <div>
+            <button @click="showEspnPanel = !showEspnPanel" class="text-xs text-blue-600 hover:underline" x-text="showEspnPanel ? '− ESPN sync (optional)' : '+ ESPN sync (optional)'"></button>
+            <div x-show="showEspnPanel" class="mt-2 grid grid-cols-2 gap-3 bg-gray-50 rounded-lg p-3">
+              <div><label class="block text-[11px] text-gray-500 mb-1">ESPN League ID</label><input x-model="draftSetup.espn_league_id" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" placeholder="e.g. 123456" /></div>
+              <div><label class="block text-[11px] text-gray-500 mb-1">Season</label><input type="number" x-model.number="draftSetup.espn_season" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" placeholder="2026" /></div>
+              <div class="col-span-2 text-[11px] text-gray-400">For a private league you'll also paste your <code>espn_s2</code> and <code>SWID</code> cookies when you sync, once the draft is running.</div>
+            </div>
+          </div>
+          <button @click="startDraft()" :disabled="draftLoading" class="w-full bg-blue-600 text-white rounded-lg py-2 text-sm font-semibold hover:bg-blue-700 disabled:opacity-50">
+            <span x-text="draftLoading ? 'Starting…' : 'Start Draft'"></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ACTIVE DRAFT -->
+      <div x-show="draft.active">
+        <!-- Status bar -->
+        <div class="flex flex-wrap items-center gap-3 mb-3">
+          <div>
+            <h2 class="text-lg font-bold">Live Draft</h2>
+            <div class="text-xs text-gray-500" x-text="draft.source"></div>
+          </div>
+          <template x-if="draft.on_the_clock">
+            <div class="px-3 py-1.5 rounded-lg text-sm font-semibold"
+              :class="draft.on_the_clock.owner_tag === 'me' ? 'bg-blue-600 text-white' : (draft.on_the_clock.owner_tag === 'jake' ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-700')">
+              R<span x-text="draft.on_the_clock.round"></span> · Pick <span x-text="draft.on_the_clock.overall"></span>/<span x-text="draft.total_picks"></span>
+              · On the clock: <span x-text="draft.on_the_clock.team_name"></span>
+            </div>
+          </template>
+          <template x-if="draft.complete">
+            <div class="px-3 py-1.5 rounded-lg text-sm font-semibold bg-green-100 text-green-700">Draft complete 🎉</div>
+          </template>
+          <div class="ml-auto flex items-center gap-2">
+            <button @click="undoPick()" class="text-xs border border-gray-300 px-3 py-1.5 rounded hover:bg-gray-50">Undo</button>
+            <button x-show="draft.espn_league_id" @click="espnSync()" :disabled="draftLoading" class="text-xs border border-blue-300 text-blue-700 px-3 py-1.5 rounded hover:bg-blue-50" x-text="draftLoading ? 'Syncing…' : 'ESPN Sync'"></button>
+            <button @click="resetDraft()" class="text-xs border border-red-300 text-red-600 px-3 py-1.5 rounded hover:bg-red-50">Reset</button>
+          </div>
+        </div>
+
+        <!-- Your pick / Jake's pick chips -->
+        <div class="grid grid-cols-2 gap-3 mb-4">
+          <template x-if="draft.me">
+            <div class="rounded-lg border p-3" :class="isOwnerOnClock('me') ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-blue-200'">
+              <div class="text-[11px] uppercase tracking-wide" :class="isOwnerOnClock('me') ? 'text-blue-100' : 'text-blue-500'">Your pick (slot <span x-text="draft.me.slot"></span>)</div>
+              <div class="text-sm font-semibold mt-0.5" x-show="draft.me.next_overall">
+                <span x-show="isOwnerOnClock('me')">You're on the clock — pick now!</span>
+                <span x-show="!isOwnerOnClock('me')">Next: overall #<span x-text="draft.me.next_overall"></span> · <span x-text="draft.me.picks_until"></span> pick(s) away</span>
+              </div>
+              <div class="text-sm font-semibold mt-0.5" x-show="!draft.me.next_overall">No more picks</div>
+            </div>
+          </template>
+          <template x-if="draft.jake">
+            <div class="rounded-lg border p-3" :class="isOwnerOnClock('jake') ? 'bg-amber-500 text-white border-amber-500' : 'bg-white border-amber-200'">
+              <div class="text-[11px] uppercase tracking-wide" :class="isOwnerOnClock('jake') ? 'text-amber-100' : 'text-amber-600'">Jake's pick (slot <span x-text="draft.jake.slot"></span>)</div>
+              <div class="text-sm font-semibold mt-0.5" x-show="draft.jake.next_overall">
+                <span x-show="isOwnerOnClock('jake')">Jake's on the clock!</span>
+                <span x-show="!isOwnerOnClock('jake')">Next: overall #<span x-text="draft.jake.next_overall"></span> · <span x-text="draft.jake.picks_until"></span> pick(s) away</span>
+              </div>
+              <div class="text-sm font-semibold mt-0.5" x-show="!draft.jake.next_overall">No more picks</div>
+            </div>
+          </template>
+        </div>
+
+        <div class="grid grid-cols-3 gap-4">
+          <!-- Best available (main) -->
+          <div class="col-span-2">
+            <div class="flex items-center gap-2 mb-2">
+              <h3 class="text-sm font-semibold">Best Available</h3>
+              <span class="text-xs text-gray-400" x-text="'· ' + draftBest.length + ' shown'"></span>
+              <div class="ml-auto flex gap-1">
+                <button @click="setDraftPos('')" class="text-[11px] px-2 py-1 rounded-full border" :class="!draftPosFilter ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300'">All</button>
+                <template x-for="pos in ['QB','RB','WR','TE']" :key="pos">
+                  <button @click="setDraftPos(pos)" class="text-[11px] px-2 py-1 rounded-full border" :class="draftPosFilter === pos ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300'" x-text="pos"></button>
+                </template>
+              </div>
+            </div>
+            <div class="bg-white rounded-lg border overflow-hidden">
+              <table class="w-full text-sm">
+                <thead class="bg-gray-50 text-gray-500 text-xs">
+                  <tr>
+                    <th class="px-3 py-2 text-center w-10">#</th>
+                    <th class="px-3 py-2 text-left">Player</th>
+                    <th class="px-3 py-2 text-left">Team</th>
+                    <th class="px-3 py-2 text-center">Pos</th>
+                    <th class="px-3 py-2 text-center">Tier</th>
+                    <th class="px-3 py-2 text-center w-20"></th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y">
+                  <template x-for="p in draftBest" :key="p.player_id + '-' + p.name">
+                    <tr class="hover:bg-blue-50">
+                      <td class="px-3 py-1.5 text-center text-gray-400 font-mono" x-text="p.rank"></td>
+                      <td class="px-3 py-1.5 font-medium text-gray-900" x-text="p.name"></td>
+                      <td class="px-3 py-1.5 text-gray-500 text-xs" x-text="p.team || 'FA'"></td>
+                      <td class="px-3 py-1.5 text-center"><span class="text-[10px] px-2 py-0.5 rounded font-semibold" :class="posBadgeClass(p.position)" x-text="p.position"></span></td>
+                      <td class="px-3 py-1.5 text-center text-xs font-semibold text-gray-600" x-text="p.tier || '—'"></td>
+                      <td class="px-3 py-1.5 text-center">
+                        <button @click="makePick(p)" class="text-[11px] bg-gray-900 text-white px-2 py-1 rounded hover:bg-black">Draft</button>
+                      </td>
+                    </tr>
+                  </template>
+                  <tr x-show="draftBest.length === 0"><td colspan="6" class="px-3 py-6 text-center text-gray-400">No players available.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Sidebar: recent picks + your/Jake rosters -->
+          <div class="space-y-4">
+            <div class="bg-white rounded-lg border p-3">
+              <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Recent Picks</h3>
+              <div class="space-y-1">
+                <template x-for="pk in draftRecentPicks(8)" :key="pk.overall_pick">
+                  <div class="flex items-center gap-2 text-xs">
+                    <span class="text-gray-400 font-mono w-8">#<span x-text="pk.overall_pick"></span></span>
+                    <span class="font-medium text-gray-800" x-text="pk.player_name"></span>
+                    <span class="text-gray-400" x-text="pk.position || ''"></span>
+                    <span class="ml-auto text-[10px] px-1.5 py-0.5 rounded" :class="pk.via === 'espn' ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-500'" x-text="'slot ' + pk.team_slot"></span>
+                  </div>
+                </template>
+                <div x-show="!draft.picks || draft.picks.length === 0" class="text-xs text-gray-400">No picks yet.</div>
+              </div>
+            </div>
+            <div class="bg-blue-50 rounded-lg border border-blue-200 p-3">
+              <h3 class="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-2">Your Team</h3>
+              <div class="space-y-1">
+                <template x-for="pl in draftOwnerRoster('me')" :key="pl.overall_pick">
+                  <div class="flex items-center gap-2 text-xs">
+                    <span class="text-[10px] px-1.5 py-0.5 rounded font-semibold" :class="posBadgeClass(pl.position)" x-text="pl.position || '?'"></span>
+                    <span class="font-medium text-gray-800" x-text="pl.player_name"></span>
+                    <span class="ml-auto text-gray-400" x-text="'R' + pl.round"></span>
+                  </div>
+                </template>
+                <div x-show="draftOwnerRoster('me').length === 0" class="text-xs text-blue-400">No picks yet.</div>
+              </div>
+            </div>
+            <div class="bg-amber-50 rounded-lg border border-amber-200 p-3">
+              <h3 class="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-2">Jake's Team</h3>
+              <div class="space-y-1">
+                <template x-for="pl in draftOwnerRoster('jake')" :key="pl.overall_pick">
+                  <div class="flex items-center gap-2 text-xs">
+                    <span class="text-[10px] px-1.5 py-0.5 rounded font-semibold" :class="posBadgeClass(pl.position)" x-text="pl.position || '?'"></span>
+                    <span class="font-medium text-gray-800" x-text="pl.player_name"></span>
+                    <span class="ml-auto text-gray-400" x-text="'R' + pl.round"></span>
+                  </div>
+                </template>
+                <div x-show="draftOwnerRoster('jake').length === 0" class="text-xs text-amber-400">No picks yet.</div>
+              </div>
+            </div>
+            <!-- ESPN sync creds (for private league) -->
+            <div x-show="draft.espn_league_id" class="bg-white rounded-lg border p-3">
+              <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">ESPN Sync</h3>
+              <p class="text-[11px] text-gray-400 mb-2">Private league? Paste cookies from a logged-in ESPN session.</p>
+              <input x-model="espnCreds.espn_s2" placeholder="espn_s2" class="w-full border border-gray-300 rounded px-2 py-1 text-xs mb-1" />
+              <input x-model="espnCreds.swid" placeholder="SWID {…}" class="w-full border border-gray-300 rounded px-2 py-1 text-xs mb-2" />
+              <button @click="espnSync()" :disabled="draftLoading" class="w-full text-xs bg-blue-600 text-white rounded py-1.5 hover:bg-blue-700 disabled:opacity-50" x-text="draftLoading ? 'Syncing…' : 'Sync from ESPN'"></button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 

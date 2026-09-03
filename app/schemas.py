@@ -303,6 +303,40 @@ class RankingsRenameResult(BaseModel):
     count: int
 
 
+# ---- Live Draft Tracker ----
+
+class DraftTeamIn(BaseModel):
+    slot: int
+    name: Optional[str] = None
+    owner_tag: Optional[str] = None   # "me" | "jake" | None
+
+
+class DraftStartIn(BaseModel):
+    source: Optional[str] = None
+    name: str = "Live Draft"
+    num_teams: int = 12
+    rounds: int = 16
+    snake: bool = True
+    my_slot: Optional[int] = 2
+    jake_slot: Optional[int] = 5
+    teams: Optional[List[DraftTeamIn]] = None   # explicit team list overrides my/jake slots
+    espn_league_id: Optional[str] = None
+    espn_season: Optional[int] = None
+
+
+class DraftPickIn(BaseModel):
+    player_id: Optional[int] = None
+    player_name: Optional[str] = None
+    team_slot: Optional[int] = None   # defaults to the on-the-clock team
+
+
+class EspnSyncIn(BaseModel):
+    league_id: Optional[str] = None
+    season: Optional[int] = None
+    espn_s2: Optional[str] = None
+    swid: Optional[str] = None
+
+
 # ---- Activity ----
 
 class ActivityOut(BaseModel):

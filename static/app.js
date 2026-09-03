@@ -52,6 +52,14 @@ function app() {
     uploadingRankings: false,
     selectedPlayer: null,
     _rankSearchTimer: null,
+    // ---- Live Draft ----
+    draft: { active: false },
+    draftBest: [],
+    draftPosFilter: '',
+    draftLoading: false,
+    draftSetup: { source: '', name: 'Live Draft', num_teams: 12, my_slot: 2, jake_slot: 5, snake: true, espn_league_id: '', espn_season: null },
+    espnCreds: { espn_s2: '', swid: '' },
+    showEspnPanel: false,
     scoring: false,
 
     // Criteria library
@@ -1313,6 +1321,104 @@ function app() {
         'bg-purple-100 text-purple-700': pos === 'QB',
         'bg-gray-100 text-gray-600': !['RB','WR','TE','QB'].includes(pos),
       };
+    },
+
+    // ---- Live Draft ----
+
+    async openLiveDraft() {
+      this.view = 'draft';
+      if (!this.rankSources.length) await this.loadRankingSources();
+      if (!this.draftSetup.source) {
+        this.draftSetup.source = this.rankSource || (this.rankSources[0] && this.rankSources[0].source) || '';
+      }
+      await this.loadDraft();
+    },
+
+    async loadDraft() {
+      const res = await fetch(`${API}/api/draft/current`);
+      this.draft = res.ok ? await res.json() : { active: false };
+      if (this.draft.active) await this.loadDraftBest();
+    },
+
+    async loadDraftBest() {
+      const p = new URLSearchParams();
+      if (this.draftPosFilter) p.set('position', this.draftPosFilter);
+      p.set('limit', '150');
+      const res = await fetch(`${API}/api/draft/best-available?${p.toString()}`);
+      this.draftBest = res.ok ? (await res.json()).players : [];
+    },
+
+    setDraftPos(pos) {
+      this.draftPosFilter = this.draftPosFilter === pos ? '' : pos;
+      this.loadDraftBest();
+    },
+
+    async startDraft() {
+      if (!this.draftSetup.source) { this.showToast('Pick a ranking source first.'); return; }
+      this.draftLoading = true;
+      try {
+        const res = await fetch(`${API}/api/draft/start`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.draftSetup),
+        });
+        if (!res.ok) { const e = await res.json().catch(() => ({})); this.showToast('Could not start: ' + (e.detail || res.status)); return; }
+        this.draft = await res.json(); this.draft.active = true;
+        await this.loadDraftBest();
+        this.showToast('Draft started — Team 1 is on the clock.');
+      } finally { this.draftLoading = false; }
+    },
+
+    async makePick(player) {
+      const res = await fetch(`${API}/api/draft/pick`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ player_id: player.player_id, player_name: player.name }),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); this.showToast(e.detail || 'Pick failed'); return; }
+      this.draft = await res.json(); this.draft.active = true;
+      await this.loadDraftBest();
+    },
+
+    async undoPick() {
+      const res = await fetch(`${API}/api/draft/undo`, { method: 'POST' });
+      if (res.ok) { this.draft = await res.json(); await this.loadDraftBest(); this.showToast('Last pick undone.'); }
+    },
+
+    async resetDraft() {
+      if (!confirm('Reset the draft? All picks will be cleared.')) return;
+      await fetch(`${API}/api/draft/reset`, { method: 'POST' });
+      this.draft = { active: false }; this.draftBest = [];
+      this.showToast('Draft reset.');
+    },
+
+    async espnSync() {
+      this.draftLoading = true;
+      try {
+        const res = await fetch(`${API}/api/draft/espn-sync`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ espn_s2: this.espnCreds.espn_s2 || null, swid: this.espnCreds.swid || null }),
+        });
+        const data = await res.json();
+        if (!res.ok) { this.showToast('ESPN sync: ' + (data.detail || res.status)); return; }
+        this.draft = data; this.draft.active = true;
+        await this.loadDraftBest();
+        this.showToast(`ESPN sync: +${data.synced || 0} pick(s).`);
+      } finally { this.draftLoading = false; }
+    },
+
+    draftOwnerRoster(tag) {
+      if (!this.draft || !this.draft.rosters) return [];
+      const t = (this.draft.teams || []).find(x => x.owner_tag === tag);
+      if (!t) return [];
+      return this.draft.rosters[t.slot] || this.draft.rosters[String(t.slot)] || [];
+    },
+
+    draftRecentPicks(n) {
+      const picks = (this.draft && this.draft.picks) || [];
+      return picks.slice(-n).reverse();
+    },
+
+    isOwnerOnClock(tag) {
+      return this.draft && this.draft.on_the_clock && this.draft.on_the_clock.owner_tag === tag;
     },
 
     // ---- Quick Add ----
