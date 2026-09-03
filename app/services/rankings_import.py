@@ -178,8 +178,34 @@ def ensure_expert_source(db: Session):
         build_expert_source(db, DEFAULT_SOURCE, EXPERT_SOURCE)
 
 
+# Old source labels that predate the current names, mapped to what they're now.
+LEGACY_SOURCE_RENAMES = {"REDRAFT PPR": DEFAULT_SOURCE}
+
+
+def migrate_legacy_source_names(db: Session):
+    """
+    Rename known legacy source labels to their current names on existing
+    databases (idempotent). This is why a DB first seeded as "REDRAFT PPR"
+    shows up as "Mason Dodd PPR Redraft 2026" after upgrading, without a reseed.
+    """
+    changed = False
+    for old, new in LEGACY_SOURCE_RENAMES.items():
+        if old == new:
+            continue
+        has_old = db.query(PlayerRanking).filter(PlayerRanking.source == old).first()
+        has_new = db.query(PlayerRanking).filter(PlayerRanking.source == new).first()
+        if has_old and not has_new:
+            db.query(PlayerRanking).filter(PlayerRanking.source == old).update(
+                {PlayerRanking.source: new}, synchronize_session=False
+            )
+            changed = True
+    if changed:
+        db.commit()
+
+
 def seed_rankings(db: Session):
-    """Load the bundled rankings on first run and derive the Expert source."""
+    """Load the bundled rankings on first run, migrate legacy names, derive Expert."""
+    migrate_legacy_source_names(db)
     if os.path.exists(DEFAULT_CSV) and (
         db.query(PlayerRanking).filter(PlayerRanking.source == DEFAULT_SOURCE).count() == 0
     ):

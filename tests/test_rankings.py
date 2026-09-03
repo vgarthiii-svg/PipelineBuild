@@ -222,6 +222,20 @@ class TestRankings:
         rows = client.get("/api/rankings", params={"source": EXPERT_SOURCE, "limit": 1000}).json()
         assert len(rows) == second["total"]
 
+    def test_legacy_source_name_migrates(self, test_db):
+        # Simulate an existing DB seeded under the old "REDRAFT PPR" label.
+        from app.models import PlayerRanking
+        from app.services.rankings_import import migrate_legacy_source_names
+        db = test_db()
+        try:
+            db.add(PlayerRanking(source="REDRAFT PPR", player_id=1, rank=1, name="Old Guy", position="RB"))
+            db.commit()
+            migrate_legacy_source_names(db)
+            assert db.query(PlayerRanking).filter(PlayerRanking.source == "REDRAFT PPR").count() == 0
+            assert db.query(PlayerRanking).filter(PlayerRanking.source == DEFAULT_SOURCE).count() == 1
+        finally:
+            db.close()
+
     def test_rename_collision_409(self, client):
         self._import(client)
         client.post("/api/rankings/import?source=Other").json()
