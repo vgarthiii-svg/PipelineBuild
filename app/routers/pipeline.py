@@ -16,7 +16,7 @@ from app.schemas import (
     PipelineBulkCreate, PipelineSummary, CriterionScoreCreate, CriterionScoreOut,
 )
 from app.scoring import calculate_pmf, calculate_matchmaker, assign_tier
-from app.importers import ingest_pipeline_rows, import_decerto
+from app.importers import ingest_pipeline_rows, import_decerto, import_distinguished
 
 router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
 
@@ -242,6 +242,16 @@ def import_decerto_pipeline(db: Session = Depends(get_db)):
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return {"status": "ok", "client": "Decerto", **result}
+
+
+@router.post("/import-distinguished")
+def import_distinguished_pipeline(db: Session = Depends(get_db)):
+    """Load Distinguished Fine Art & Collectibles as a client + its scored ecosystem from fine_art_ecosystem.csv."""
+    try:
+        result = import_distinguished(db)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {"status": "ok", "client": "Distinguished Fine Art & Collectibles", **result}
 
 
 @router.post("/{client_id}/import-csv")

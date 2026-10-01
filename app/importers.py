@@ -33,7 +33,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
 
 _COLS = {
     "name":   ["Company", "Partner Name", "name"],
-    "type":   ["Segment", "Partner Type", "type"],
+    "type":   ["Segment", "Category", "Partner Type", "type"],
     "hq":     ["HQ", "hq"],
     "fit":    ["Fit (re-scored)", "Fit (1-5)", "Fit", "fit"],
     "contact": ["Contact (enriched)", "Contact", "contact"],
@@ -257,3 +257,52 @@ def import_decerto(db, csv_path=None):
         rows = list(csv.DictReader(f))
 
     return ingest_pipeline_rows(db, client, rows, source="Decerto US Prospect List")
+
+
+# ---- Distinguished Fine Art & Collectibles loader ----
+
+DISTINGUISHED_CRITERIA = [
+    ("HNW/UHNW collector access", "Serves high-net-worth clients who own insurable collections", "The buyers of the coverage", 10, 1),
+    ("Referral or distribution potential", "Can refer insurable collections or place/distribute the program (brokers, advisors, appraisers, shippers)", "How business reaches Distinguished", 9, 2),
+    ("Art & collectibles ecosystem fit", "Sits in the fine-art / collectibles value chain", "Distinguished's named professional network", 8, 3),
+    ("Insurable-asset concentration", "Regularly handles or holds high-value physical pieces needing coverage", "Where loss exposure lives", 7, 4),
+    ("Prestige / trust alignment", "Premium, reputation-first brand consistent with 'Distinguished'", "Brand fit", 5, 5),
+]
+
+
+def import_distinguished(db, csv_path=None):
+    """Load Distinguished Fine Art & Collectibles as a client with its scored target ecosystem. Idempotent."""
+    csv_path = csv_path or os.path.join(REPO_ROOT, "fine_art_ecosystem.csv")
+    if not os.path.exists(csv_path):
+        raise FileNotFoundError(f"Fine-art ecosystem CSV not found at {csv_path}")
+
+    client = db.query(Client).filter(Client.name == "Distinguished Fine Art & Collectibles").first()
+    if not client:
+        client = Client(name="Distinguished Fine Art & Collectibles")
+        db.add(client)
+    client.website = "https://distinguished.com"
+    client.description = "Specialty insurance program (MGA, with Core Specialty) for fine art and collectibles. Nail-to-nail coverage on/off premises, in transit and storage; capacity up to $125M, all 50 states; distributed through brokers."
+    client.primary_revenue_driver = "Specialty fine art & collectibles premium, placed through retail brokers"
+    client.target_buyer = "HNW/UHNW collectors, dealers, galleries, advisors, museums, auction houses — reached via private-client P&C brokers"
+    client.profile_json = json.dumps({
+        "hq": "New York, NY", "launched": 2023, "underwriter": "Core Specialty",
+        "capacity": "$125M, no aggregation", "availability": "all 50 states",
+        "leadership": ["Patrick Drummond", "Nonie Tompkins", "Stacy Button"],
+        "named_network": ["brokers", "advisors", "appraisers", "shippers", "restorers", "attorneys"],
+        "source": "distinguished.com",
+    })
+    db.flush()
+
+    existing = {c.name for c in db.query(ScoringCriterion).filter(ScoringCriterion.client_id == client.id)}
+    for name, desc, why, weight, order in DISTINGUISHED_CRITERIA:
+        if name not in existing:
+            db.add(ScoringCriterion(
+                client_id=client.id, name=name, description=desc,
+                why_it_matters=why, weight=weight, sort_order=order,
+            ))
+    db.flush()
+
+    with open(csv_path, newline="") as f:
+        rows = list(csv.DictReader(f))
+
+    return ingest_pipeline_rows(db, client, rows, source="Fine Art & Collectibles ecosystem")
