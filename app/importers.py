@@ -259,63 +259,139 @@ def import_decerto(db, csv_path=None):
     return ingest_pipeline_rows(db, client, rows, source="Decerto US Prospect List")
 
 
-# ---- Distinguished Fine Art & Collectibles loader ----
+# ---- Distinguished Fine Art & Collectibles: DFAC prospect universe loader ----
+#
+# Built on the division's GTM framework (DFAC_US_Prospect_Universe). Every row is
+# a distribution partner (broker/wholesaler/MGA/network), scored on the 100-point
+# model: premium concentration 30, segment fit 20, distribution leverage 20,
+# territory gap 15, access path 10, conflict-free 5. Wave 1 >=70, Wave 2 45-69,
+# Wave 3 <45 -> dashboard tiers hot/warm/monitor. Named-contact and
+# territory/access are a later pass, so scores are a floor.
 
-DISTINGUISHED_CRITERIA = [
-    ("HNW/UHNW collector access", "Serves high-net-worth clients who own insurable collections", "The buyers of the coverage", 10, 1),
-    ("Referral or distribution potential", "Can refer insurable collections or place/distribute the program (brokers, advisors, appraisers, shippers)", "How business reaches Distinguished", 9, 2),
-    ("Art & collectibles ecosystem fit", "Sits in the fine-art / collectibles value chain", "Distinguished's named professional network", 8, 3),
-    ("Insurable-asset concentration", "Regularly handles or holds high-value physical pieces needing coverage", "Where loss exposure lives", 7, 4),
-    ("Prestige / trust alignment", "Premium, reputation-first brand consistent with 'Distinguished'", "Brand fit", 5, 5),
+DFAC_CRITERIA = [
+    ("Premium concentration", "Estimated placeable fine-art premium already in their book. 30 at $500K+, 20 at $150K-500K, 10 at $50K-150K, 0 below", "The prize", 30, 1),
+    ("Segment fit", "Serves 2+ of the four forms (Personal/Corporate/Dealer/Museum)=20, one strong form=12, adjacent=4", "Multi-form produces a 2nd and 3rd submission", 20, 2),
+    ("Distribution leverage", "Producers one relationship reaches. 20 for 50+, 14 for 10-49, 8 for 3-9, 3 for one", "The channel multiplier", 20, 3),
+    ("Territory gap", "No producing broker in that metro/state=15, thin=8, well-covered=0 (needs Patrick's production map)", "West-region coverage gap", 15, 4),
+    ("Access path", "Warm intro=10, 2nd-degree=6, cold with named contact=3, no human=0", "Cheapest points in the model", 10, 5),
+    ("Conflict-free", "No competing fine-art program/owned MGA/East tie=5, partial=2, conflicted=0", "Is it a channel or a competitor", 5, 6),
 ]
+
+_WAVE_TIER = {1: "hot", 2: "warm", 3: "monitor"}
+
+
+def _clear_client_pipeline(db, client):
+    """Remove a client's pipeline entries, their scores, intros and logs, and its criteria."""
+    from app.models import IntroPackage
+    entries = db.query(PipelineEntry).filter(PipelineEntry.client_id == client.id).all()
+    for e in entries:
+        db.query(CriterionScore).filter(CriterionScore.pipeline_entry_id == e.id).delete()
+        db.query(IntroPackage).filter(IntroPackage.pipeline_entry_id == e.id).delete()
+        db.query(ActivityLog).filter(ActivityLog.pipeline_entry_id == e.id).delete()
+        db.delete(e)
+    db.query(ScoringCriterion).filter(ScoringCriterion.client_id == client.id).delete()
+    db.flush()
 
 
 def import_distinguished(db, csv_path=None):
-    """Load Distinguished Fine Art & Collectibles as a client with its scored target ecosystem. Idempotent."""
-    csv_path = csv_path or os.path.join(REPO_ROOT, "fine_art_ecosystem.csv")
+    """Load the Distinguished Fine Art & Collectibles broker/distribution universe (DFAC framework).
+
+    Replaces the client's pipeline with the authoritative universe, scored on the
+    100-point model with Wave-based tiers. Idempotent (clears and reloads).
+    """
+    csv_path = csv_path or os.path.join(REPO_ROOT, "dfac_prospect_universe.csv")
     if not os.path.exists(csv_path):
-        raise FileNotFoundError(f"Fine-art ecosystem CSV not found at {csv_path}")
+        raise FileNotFoundError(f"DFAC prospect universe not found at {csv_path}")
 
     client = db.query(Client).filter(Client.name == "Distinguished Fine Art & Collectibles").first()
     if not client:
         client = Client(name="Distinguished Fine Art & Collectibles")
         db.add(client)
     client.website = "https://distinguished.com"
-    client.description = "Specialty insurance program (MGA, with Core Specialty) for fine art and collectibles. Nail-to-nail coverage on/off premises, in transit and storage; capacity up to $125M, all 50 states; distributed through brokers."
-    client.primary_revenue_driver = "Specialty fine art & collectibles premium, placed through retail brokers"
-    client.target_buyer = "HNW/UHNW collectors, dealers, galleries, advisors, museums, auction houses — reached via private-client P&C brokers"
+    client.description = "Specialty fine art & collectibles MGA. Distributes through brokers, so every prospect is a distribution partner. Two books: West Region broker book and the whole-US national account track."
+    client.primary_revenue_driver = "Fine art & collectibles premium placed through registered brokers (Broker Connect portal)"
+    client.target_buyer = "Retail brokers, wholesalers, MGAs and agency networks with a private-client / fine-art placement practice"
     client.profile_json = json.dumps({
-        "hq": "New York, NY", "launched": 2023, "underwriter": "Core Specialty",
-        "capacity": "$125M, no aggregation", "availability": "all 50 states",
-        "leadership": ["Patrick Drummond", "Nonie Tompkins", "Stacy Button"],
-        "named_network": ["brokers", "advisors", "appraisers", "shippers", "restorers", "attorneys"],
-        "source": "distinguished.com",
+        "model": "100-point: premium concentration 30, segment fit 20, distribution leverage 20, territory gap 15, access path 10, conflict-free 5",
+        "waves": {"wave1": ">=70", "wave2": "45-69", "wave3": "<45"},
+        "segments": ["T1 Major", "T2 Multi-office", "T3 Specialist", "T4 Wholesale", "National Brokerage", "National Wholesaler", "Direct Writer"],
+        "forms": ["Personal", "Corporate", "Dealer", "Museum"],
+        "books": ["West Region (Vinnie)", "National Account"],
+        "source": "DFAC_US_Prospect_Universe (GTM plan rev 4)",
     })
     db.flush()
 
-    existing = {c.name for c in db.query(ScoringCriterion).filter(ScoringCriterion.client_id == client.id)}
-    for name, desc, why, weight, order in DISTINGUISHED_CRITERIA:
-        if name not in existing:
-            db.add(ScoringCriterion(
-                client_id=client.id, name=name, description=desc,
-                why_it_matters=why, weight=weight, sort_order=order,
-            ))
+    _clear_client_pipeline(db, client)
+    for name, desc, why, weight, order in DFAC_CRITERIA:
+        db.add(ScoringCriterion(client_id=client.id, name=name, description=desc,
+                                why_it_matters=why, weight=weight, sort_order=order))
     db.flush()
 
     with open(csv_path, newline="") as f:
         rows = list(csv.DictReader(f))
-    result = ingest_pipeline_rows(db, client, rows, source="Fine Art & Collectibles ecosystem")
 
-    # Also load the distribution/channel prospects if present (Class = Channel)
-    channel_path = os.path.join(REPO_ROOT, "distinguished_channel_prospects.csv")
-    if os.path.exists(channel_path):
-        with open(channel_path, newline="") as f:
-            chan_rows = list(csv.DictReader(f))
-        chan = ingest_pipeline_rows(db, client, chan_rows, source="Distribution channel")
-        result = {
-            "referral": result,
-            "channel": chan,
-            "imported": result.get("imported", 0) + chan.get("imported", 0),
-            "updated": result.get("updated", 0) + chan.get("updated", 0),
-        }
-    return result
+    imported = 0
+    tier_counts = {}
+    for r in rows:
+        name = (r.get("Company") or "").strip()
+        if not name:
+            continue
+        try:
+            base = int(float(r.get("Base(100)") or 0))
+            wave = int(float(r.get("Wave") or 3))
+        except ValueError:
+            base, wave = 0, 3
+        tier = _WAVE_TIER.get(wave, "monitor")
+        city, state = _parse_hq(r.get("HQ"))
+        contact_name, contact_title = _parse_contact(r.get("Named contact"))
+        if contact_name and "not found" in (r.get("Named contact") or "").lower():
+            contact_name = None
+
+        prospect = db.query(Prospect).filter(Prospect.name.ilike(name)).first()
+        if prospect is None:
+            prospect = Prospect(name=name)
+            db.add(prospect)
+        prospect.type = (r.get("Segment") or prospect.type)
+        prospect.hq_city = city or prospect.hq_city
+        prospect.hq_state = state or prospect.hq_state
+        prospect.enrichment_source = "DFAC universe"
+        prospect.enrichment_date = datetime.utcnow()
+        if contact_name:
+            prospect.decision_makers_json = json.dumps([{"name": contact_name, "title": contact_title, "source": "DFAC"}])
+        db.flush()
+
+        if contact_name:
+            rel = (db.query(Relationship)
+                   .filter(Relationship.prospect_id == prospect.id, Relationship.contact_name == contact_name)
+                   .first())
+            if not rel:
+                rel = Relationship(prospect_id=prospect.id, contact_name=contact_name)
+                db.add(rel)
+            rel.contact_title = contact_title
+            rel.context = (r.get("Conflict flag") or None)
+            rel.source = "DFAC"
+            rel.warmest_path = "Practice-leader sale"
+            db.flush()
+
+        entry = PipelineEntry(
+            client_id=client.id, prospect_id=prospect.id,
+            source="DFAC prospect universe",
+            pmf_score=float(base), matchmaker_score=float(base), tier=tier, status="scored",
+            next_action=("Ask for: " + (r.get("Practice to ask for") or "").strip())[:500],
+            notes=f"Book: {r.get('Book','')} | Forms: {r.get('Forms','')} | Base {base} (Wave {wave}) | "
+                  f"Trigger: {(r.get('Trigger') or '').strip()} | Conflict: {(r.get('Conflict flag') or '').strip()}",
+        )
+        db.add(entry)
+        db.flush()
+        imported += 1
+        tier_counts[tier] = tier_counts.get(tier, 0) + 1
+
+    db.add(ActivityLog(action="pipeline_imported",
+                       new_value=f"Loaded DFAC universe: {imported} orgs for {client.name}",
+                       notes="DFAC prospect universe"))
+    db.commit()
+    return {"imported": imported, "tiers": tier_counts, "model": "DFAC 100-point / Wave"}
+
+
+# Alias
+import_dfac = import_distinguished
