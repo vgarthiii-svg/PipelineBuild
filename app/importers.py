@@ -304,5 +304,18 @@ def import_distinguished(db, csv_path=None):
 
     with open(csv_path, newline="") as f:
         rows = list(csv.DictReader(f))
+    result = ingest_pipeline_rows(db, client, rows, source="Fine Art & Collectibles ecosystem")
 
-    return ingest_pipeline_rows(db, client, rows, source="Fine Art & Collectibles ecosystem")
+    # Also load the distribution/channel prospects if present (Class = Channel)
+    channel_path = os.path.join(REPO_ROOT, "distinguished_channel_prospects.csv")
+    if os.path.exists(channel_path):
+        with open(channel_path, newline="") as f:
+            chan_rows = list(csv.DictReader(f))
+        chan = ingest_pipeline_rows(db, client, chan_rows, source="Distribution channel")
+        result = {
+            "referral": result,
+            "channel": chan,
+            "imported": result.get("imported", 0) + chan.get("imported", 0),
+            "updated": result.get("updated", 0) + chan.get("updated", 0),
+        }
+    return result

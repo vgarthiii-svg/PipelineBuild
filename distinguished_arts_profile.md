@@ -61,5 +61,39 @@ Warm where Vinnie / Distinguished already has broker, gallery, or advisor relati
 ### Target ecosystem
 See `fine_art_ecosystem.csv` — a starter list of real businesses across auction, gallery, logistics, storage, appraisal, collection-management, wealth/family-office, and HNW-broker categories, pre-scored for a first pipeline run. Enrich and expand as needed.
 
-### Vinnie's relationship
+---
+
+## Rubric v2 — Distribution / channel prospects
+
+Modeling an insurance-distribution prospect list showed the v1 art-ecosystem criteria don't fit. Insurance prospects are scored on a **channel** rubric led by **distribution segment** — where they sit in the chain that moves fine-art business to a wholesale MGA like Distinguished. Tag every prospect **Class = Channel** (sells/places the coverage) or **Class = Referral** (originates insurable collections; the v1 art-world 26).
+
+### Distribution segment taxonomy (the lead dimension)
+| Segment | Role to Distinguished | Base segment score (0–5) |
+|---------|----------------------|--------------------------|
+| Retail — Private Client specialist | Owns the HNW client; places up to wholesale/MGA | 5 |
+| Agency network / aggregator | One appointment = many retail agencies' HNW books (leverage) | 5 |
+| Wholesale broker | Routes complex/overflow fine art to MGAs | 4 |
+| MGA / Program — no own fine-art program | Can place or refer; partner for capacity | 4 |
+| Retail — generalist | Has affluent clients but no PC specialization | 3 |
+| MGA / Program — **own** fine-art program | Competes; channel conflict | 2 |
+| HNW carrier with own fine-art program | Self-underwrites; competitor | 1 |
+| Direct / captive / mass-market carrier | Not a placement channel | 0 |
+
+### Channel rubric (PMF, 6 criteria)
+| # | Criterion | What it measures | Weight |
+|---|-----------|-----------------|--------|
+| 1 | **Distribution segment fit** | Position in the chain (from the taxonomy above) | 10 |
+| 2 | Fine-art/collections placement capability | Has a Private Client/HNW desk that actually places fine art & collectibles | 9 |
+| 3 | Channel independence | Does NOT run a competing fine-art program (5 = pure distributor, 0 = full competitor) | 8 |
+| 4 | HNW reach & volume | Breadth/scale of affluent book or downstream agents | 7 |
+| 5 | Placement authority | Binding authority / Lloyd's coverholder — can move business directly | 5 |
+| 6 | Prestige / service alignment | Concierge private-client posture fitting "Distinguished" | 4 |
+
+RS (relationship) stays separate — warm ties (e.g., High Street Brokers / Tompkins) lift the score.
+
+Channel prospects live in `distinguished_channel_prospects.csv`, segment-tagged and scored.
+
+---
+
+## Vinnie's relationship
 TBD — set as you confirm warm intros into these businesses.
